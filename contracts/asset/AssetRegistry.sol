@@ -3,8 +3,8 @@ pragma solidity ^0.8.25;
 
 import "@openzeppelin/contracts/access/AccessControl.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
-import "../interfaces/IAssetRegistry.sol";
-import "../config/AssetConfig.sol";
+import "../interfaces/asset/IAssetRegistry.sol";
+import "../utils/AssetConfig.sol";
 
 /**
  * @title AssetRegistry
@@ -197,3 +197,4 @@ contract AssetRegistry is AccessControl, ReentrancyGuard, IAssetRegistry {
         isOperator[operator] = false;
     }
 }
+

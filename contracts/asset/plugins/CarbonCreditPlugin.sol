@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.25;
 
-import "../interfaces/IAssetPlugin.sol";
-import "../config/AssetConfig.sol";
+import "../../interfaces/asset/plugins/IAssetPlugin.sol";
+import "../../utils/AssetConfig.sol";
 
 /**
  * @title CarbonCreditPlugin
@@ -142,3 +142,6 @@ contract CarbonCreditPlugin is IAssetPlugin {
         });
     }
 }
+
+
+

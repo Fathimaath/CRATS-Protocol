@@ -3,9 +3,9 @@ pragma solidity ^0.8.25;
 
 import "@openzeppelin/contracts/access/AccessControl.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
-import "../interfaces/AggregatorV3Interface.sol";
-import "../interfaces/IAssetOracle.sol";
-import "../config/AssetConfig.sol";
+import "../interfaces/standards/AggregatorV3Interface.sol";
+import "../interfaces/asset/IAssetOracle.sol";
+import "../utils/AssetConfig.sol";
 
 /**
  * @title AssetOracle
@@ -210,3 +210,5 @@ contract AssetOracle is AccessControl, ReentrancyGuard, IAssetOracle {
         require(proposedNAV <= maxNAV, "AssetOracle: NAV exceeds verified reserve");
     }
 }
+
+

@@ -3,12 +3,12 @@ pragma solidity ^0.8.25;
 
 import "@openzeppelin/contracts/access/AccessControl.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
-import "../interfaces/IComplianceModule.sol";
-import "../interfaces/IIdentityRegistry.sol";
-import "../interfaces/ICRATSAccessControl.sol";
-import "../interfaces/ITravelRuleModule.sol";
-import "../config/CRATSConfig.sol";
-import "../libraries/JurisdictionCodes.sol";
+import "../interfaces/compliance/ICompliance.sol";
+import "../interfaces/identity/IIdentityRegistry.sol";
+import "../interfaces/utils/ICRATSAccessControl.sol";
+import "../interfaces/compliance/ITravelRuleModule.sol";
+import "../utils/CRATSConfig.sol";
+import "../utils/JurisdictionCodes.sol";
 
 /**
  * @title ComplianceModule
@@ -442,3 +442,7 @@ contract ComplianceModule is AccessControl, ReentrancyGuard, IComplianceModule {
         _allowedJurisdictions[JurisdictionCodes.AE] = true;
     }
 }
+
+
+
+

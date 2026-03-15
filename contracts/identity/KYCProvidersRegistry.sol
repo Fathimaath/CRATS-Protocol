@@ -2,7 +2,7 @@
 pragma solidity ^0.8.25;
 
 import "@openzeppelin/contracts/access/Ownable.sol";
-import "../interfaces/IKYCProvidersRegistry.sol";
+import "../interfaces/identity/IKYCProvidersRegistry.sol";
 
 /**
  * @title KYCProvidersRegistry

@@ -3,9 +3,9 @@ pragma solidity ^0.8.25;
 
 import "@openzeppelin/contracts/access/AccessControl.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
-import "../interfaces/ICircuitBreakerModule.sol";
-import "../interfaces/ICRATSAccessControl.sol";
-import "../config/AssetConfig.sol";
+import "../interfaces/compliance/ICircuitBreakerModule.sol";
+import "../interfaces/utils/ICRATSAccessControl.sol";
+import "../utils/AssetConfig.sol";
 
 /**
  * @title CircuitBreakerModule
@@ -221,3 +221,5 @@ contract CircuitBreakerModule is AccessControl, ReentrancyGuard, ICircuitBreaker
         isOperator[operator] = false;
     }
 }
+
+

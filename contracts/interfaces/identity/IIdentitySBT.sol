@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.25;
 
-import "../config/CRATSConfig.sol";
+import "../../utils/CRATSConfig.sol";
 
 /**
  * @title IIdentitySBT
@@ -343,3 +343,4 @@ interface IIdentitySBT {
      */
     function revokeIdentity(uint256 tokenId) external;
 }
+

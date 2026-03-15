@@ -4,14 +4,14 @@ pragma solidity ^0.8.25;
 import "@openzeppelin/contracts/access/AccessControl.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import "@openzeppelin/contracts/proxy/Clones.sol";
-import "../interfaces/IAssetFactory.sol";
-import "../interfaces/IAssetPlugin.sol";
-import "../interfaces/IAssetToken.sol";
-import "../interfaces/IAssetOracle.sol";
-import "../interfaces/IAssetRegistry.sol";
-import "../interfaces/ICircuitBreakerModule.sol";
-import "../interfaces/ICRATSAccessControl.sol";
-import "../config/AssetConfig.sol";
+import "../interfaces/asset/IAssetFactory.sol";
+import "../interfaces/asset/plugins/IAssetPlugin.sol";
+import "../interfaces/asset/IAssetToken.sol";
+import "../interfaces/asset/IAssetOracle.sol";
+import "../interfaces/asset/IAssetRegistry.sol";
+import "../interfaces/compliance/ICircuitBreakerModule.sol";
+import "../interfaces/utils/ICRATSAccessControl.sol";
+import "../utils/AssetConfig.sol";
 
 /**
  * @title AssetFactory
@@ -350,3 +350,7 @@ contract AssetFactory is AccessControl, ReentrancyGuard, IAssetFactory {
         IAssetRegistry(registry).addOperator(request.issuer);
     }
 }
+
+
+
+

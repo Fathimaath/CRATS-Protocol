@@ -5,11 +5,11 @@ import "@openzeppelin/contracts/access/AccessControl.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
 import "@openzeppelin/contracts/utils/cryptography/MessageHashUtils.sol";
-import "../interfaces/IIdentityRegistry.sol";
-import "../interfaces/IIdentitySBT.sol";
-import "../interfaces/IKYCProvidersRegistry.sol";
-import "../interfaces/ICRATSAccessControl.sol";
-import "../config/CRATSConfig.sol";
+import "../interfaces/identity/IIdentityRegistry.sol";
+import "../interfaces/identity/IIdentitySBT.sol";
+import "../interfaces/identity/IKYCProvidersRegistry.sol";
+import "../interfaces/utils/ICRATSAccessControl.sol";
+import "../utils/CRATSConfig.sol";
 
 /**
  * @title IdentityRegistry
@@ -364,3 +364,7 @@ contract IdentityRegistry is AccessControl, ReentrancyGuard, IIdentityRegistry {
         _kycRegistry = IKYCProvidersRegistry(newRegistry);
     }
 }
+
+
+
+

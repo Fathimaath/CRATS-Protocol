@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.25;
 
-import "../config/CRATSConfig.sol";
+import "../../utils/CRATSConfig.sol";
 
 /**
  * @title IComplianceModule
@@ -199,3 +199,4 @@ interface IComplianceModule {
      */
     function recordTransfer(address from, address to, uint256 amount) external;
 }
+

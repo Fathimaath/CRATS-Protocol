@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.25;
 
-import "../config/CRATSConfig.sol";
+import "../../utils/CRATSConfig.sol";
 import "./IIdentitySBT.sol";
 
 /**
@@ -221,3 +221,4 @@ interface IIdentityRegistry {
         uint64 newExpiry
     ) external;
 }
+

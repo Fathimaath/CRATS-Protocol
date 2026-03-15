@@ -4,11 +4,11 @@ pragma solidity ^0.8.25;
 import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import "@openzeppelin/contracts/access/AccessControl.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
-import "../interfaces/IAssetToken.sol";
-import "../interfaces/IIdentityRegistry.sol";
-import "../interfaces/IComplianceModule.sol";
-import "../interfaces/ICircuitBreakerModule.sol";
-import "../config/AssetConfig.sol";
+import "../interfaces/asset/IAssetToken.sol";
+import "../interfaces/identity/IIdentityRegistry.sol";
+import "../interfaces/compliance/ICompliance.sol";
+import "../interfaces/compliance/ICircuitBreakerModule.sol";
+import "../utils/AssetConfig.sol";
 
 /**
  * @title AssetToken
@@ -298,3 +298,7 @@ contract AssetToken is ERC20, AccessControl, ReentrancyGuard, IAssetToken {
         circuitBreaker = newCircuitBreaker;
     }
 }
+
+
+
+

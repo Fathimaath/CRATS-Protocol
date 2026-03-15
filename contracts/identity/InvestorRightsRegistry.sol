@@ -3,9 +3,9 @@ pragma solidity ^0.8.25;
 
 import "@openzeppelin/contracts/access/AccessControl.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
-import "../interfaces/IInvestorRightsRegistry.sol";
-import "../interfaces/IIdentityRegistry.sol";
-import "../interfaces/ICRATSAccessControl.sol";
+import "../interfaces/identity/IInvestorRightsRegistry.sol";
+import "../interfaces/identity/IIdentityRegistry.sol";
+import "../interfaces/utils/ICRATSAccessControl.sol";
 
 /**
  * @title InvestorRightsRegistry
@@ -469,3 +469,5 @@ contract InvestorRightsRegistry is AccessControl, ReentrancyGuard, IInvestorRigh
         _identityRegistry = IIdentityRegistry(newRegistry);
     }
 }
+
+

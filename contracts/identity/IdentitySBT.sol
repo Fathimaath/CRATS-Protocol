@@ -4,9 +4,9 @@ pragma solidity ^0.8.25;
 import "@openzeppelin/contracts/token/ERC721/ERC721.sol";
 import "@openzeppelin/contracts/access/AccessControl.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
-import "../interfaces/IIdentitySBT.sol";
-import "../interfaces/IKYCProvidersRegistry.sol";
-import "../config/CRATSConfig.sol";
+import "../interfaces/identity/IIdentitySBT.sol";
+import "../interfaces/identity/IKYCProvidersRegistry.sol";
+import "../utils/CRATSConfig.sol";
 
 /**
  * @title IdentitySBT
@@ -547,3 +547,6 @@ contract IdentitySBT is ERC721, AccessControl, ReentrancyGuard, IIdentitySBT {
         _kycRegistry = IKYCProvidersRegistry(newRegistry);
     }
 }
+
+
+
