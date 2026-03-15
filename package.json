@@ -1,0 +1,37 @@
+{
+  "name": "crats-layer1-test",
+  "version": "1.0.0",
+  "main": "index.js",
+  "scripts": {
+    "compile": "npx hardhat compile",
+    "deploy": "npx hardhat run scripts/deploy-layer1.js --network",
+    "deploy:local": "npx hardhat run scripts/deploy-layer1.js --network hardhat",
+    "deploy:sepolia": "npx hardhat run scripts/deploy-layer1.js --network sepolia",
+    "deploy:mainnet": "npx hardhat run scripts/deploy-layer1.js --network mainnet",
+    "add-kyc-provider": "npx hardhat run scripts/add-kyc-provider.js --network",
+    "configure-compliance": "npx hardhat run scripts/configure-compliance.js --network",
+    "test": "npx hardhat test",
+    "test:coverage": "npx hardhat coverage",
+    "clean": "npx hardhat clean",
+    "node": "npx hardhat node"
+  },
+  "keywords": [
+    "crats",
+    "rwa",
+    "tokenization",
+    "identity",
+    "compliance",
+    "blockchain"
+  ],
+  "author": "",
+  "license": "MIT",
+  "description": "CRATS Protocol Layer 1 - Multi-Chain Identity System for Regulated RWA Tokenization",
+  "devDependencies": {
+    "@nomicfoundation/hardhat-toolbox": "^6.1.2",
+    "hardhat": "^2.22.3",
+    "dotenv": "^16.0.3"
+  },
+  "dependencies": {
+    "@openzeppelin/contracts": "^5.6.1"
+  }
+}
