@@ -1,47 +1,62 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.25;
 
-import "@openzeppelin/contracts/access/Ownable.sol";
+import "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
+import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import "../interfaces/identity/IKYCProvidersRegistry.sol";
+import "../utils/CRATSConfig.sol";
 
 /**
  * @title KYCProvidersRegistry
- * @dev This contract manages the registration and status of KYC providers.
- * It implements the IKYCProvidersRegistry interface.
- * Only the owner of this contract can manage provider statuses.
+ * @dev Manages authorized KYC providers for the CRATS Protocol.
+ * // Source: OpenZeppelin AccessControlUpgradeable
  */
-contract KYCProvidersRegistry is Ownable, IKYCProvidersRegistry {
-
+contract KYCProvidersRegistry is 
+    Initializable, 
+    AccessControlUpgradeable, 
+    UUPSUpgradeable, 
+    IKYCProvidersRegistry 
+{
     // Mapping from a provider's address to their detailed information.
     mapping(address => Provider) public providers;
 
     // Array to keep track of all registered provider addresses.
     address[] private _providerAddresses;
 
-    constructor() Ownable(msg.sender) {}
+    /// @custom:oz-upgrades-unsafe-allow constructor
+    constructor() {
+        _disableInitializers();
+    }
 
-    /**
-     * @dev See {IKYCProvidersRegistry-isProviderApproved}.
-     */
-    function isProviderApproved(address providerAddress) public view override returns (bool) {
-        return providers[providerAddress].status == ProviderStatus.Approved;
+    function initialize(address admin) public initializer {
+        __AccessControl_init();
+        __UUPSUpgradeable_init();
+
+        _grantRole(DEFAULT_ADMIN_ROLE, admin);
     }
 
     /**
-     * @dev See {IKYCProvidersRegistry-getProviderInfo}.
+     * @dev Checks if a provider is approved.
+     */
+    function isProviderApproved(address providerAddress) public view override returns (bool) {
+        return providers[providerAddress].status == 2; // Approved
+    }
+
+    /**
+     * @dev Retrieves provider info.
      */
     function getProviderInfo(address providerAddress) public view override returns (Provider memory) {
         return providers[providerAddress];
     }
 
     /**
-     * @dev See {IKYCProvidersRegistry-getApprovedProviders}.
-     * Note: This function can be gas-intensive if there are many providers.
+     * @dev Gets a list of approved providers.
      */
     function getApprovedProviders() public view override returns (address[] memory) {
         uint256 approvedCount = 0;
         for (uint i = 0; i < _providerAddresses.length; i++) {
-            if (providers[_providerAddresses[i]].status == ProviderStatus.Approved) {
+            if (providers[_providerAddresses[i]].status == 2) {
                 approvedCount++;
             }
         }
@@ -49,7 +64,7 @@ contract KYCProvidersRegistry is Ownable, IKYCProvidersRegistry {
         address[] memory approvedProvidersList = new address[](approvedCount);
         uint256 currentIndex = 0;
         for (uint i = 0; i < _providerAddresses.length; i++) {
-            if (providers[_providerAddresses[i]].status == ProviderStatus.Approved) {
+            if (providers[_providerAddresses[i]].status == 2) {
                 approvedProvidersList[currentIndex] = _providerAddresses[i];
                 currentIndex++;
             }
@@ -58,18 +73,16 @@ contract KYCProvidersRegistry is Ownable, IKYCProvidersRegistry {
         return approvedProvidersList;
     }
 
-    /**
-     * @dev See {IKYCProvidersRegistry-registerProvider}.
-     * Can only be called by the contract owner.
-     */
-    function registerProvider(address providerAddress, string memory name) public override onlyOwner {
-        require(providerAddress != address(0), "Provider address cannot be zero");
-        require(providers[providerAddress].status == ProviderStatus.None, "Provider already registered");
+    // --- Admin Functions ---
+
+    function registerProvider(address providerAddress, string memory name) public override onlyRole(DEFAULT_ADMIN_ROLE) {
+        require(providerAddress != address(0), "Provider address zero");
+        require(providers[providerAddress].status == 0, "Already registered");
 
         providers[providerAddress] = Provider({
             providerAddress: providerAddress,
             name: name,
-            status: ProviderStatus.Pending,
+            status: 1, // Pending
             registeredAt: uint64(block.timestamp),
             lastActive: uint64(block.timestamp)
         });
@@ -78,36 +91,26 @@ contract KYCProvidersRegistry is Ownable, IKYCProvidersRegistry {
         emit ProviderRegistered(providerAddress, name);
     }
 
-    /**
-     * @dev See {IKYCProvidersRegistry-approveProvider}.
-     * Can only be called by the contract owner.
-     */
-    function approveProvider(address providerAddress) public override onlyOwner {
-        require(providers[providerAddress].status == ProviderStatus.Pending, "Provider is not in a pending state");
-        providers[providerAddress].status = ProviderStatus.Approved;
+    function approveProvider(address providerAddress) public override onlyRole(DEFAULT_ADMIN_ROLE) {
+        require(providers[providerAddress].status == 1, "Not pending");
+        providers[providerAddress].status = 2; // Approved
         providers[providerAddress].lastActive = uint64(block.timestamp);
-        emit ProviderStatusChanged(providerAddress, ProviderStatus.Approved);
+        emit ProviderStatusChanged(providerAddress, 2);
     }
 
-    /**
-     * @dev See {IKYCProvidersRegistry-suspendProvider}.
-     * Can only be called by the contract owner.
-     */
-    function suspendProvider(address providerAddress) public override onlyOwner {
-        require(providers[providerAddress].status == ProviderStatus.Approved, "Provider is not approved");
-        providers[providerAddress].status = ProviderStatus.Suspended;
+    function suspendProvider(address providerAddress) public override onlyRole(DEFAULT_ADMIN_ROLE) {
+        require(providers[providerAddress].status == 2, "Not approved");
+        providers[providerAddress].status = 3; // Suspended
         providers[providerAddress].lastActive = uint64(block.timestamp);
-        emit ProviderStatusChanged(providerAddress, ProviderStatus.Suspended);
+        emit ProviderStatusChanged(providerAddress, 3);
     }
 
-    /**
-     * @dev See {IKYCProvidersRegistry-revokeProvider}.
-     * Can only be called by the contract owner.
-     */
-    function revokeProvider(address providerAddress) public override onlyOwner {
-        require(providers[providerAddress].status != ProviderStatus.None, "Provider is not registered");
-        providers[providerAddress].status = ProviderStatus.Revoked;
+    function revokeProvider(address providerAddress) public override onlyRole(DEFAULT_ADMIN_ROLE) {
+        require(providers[providerAddress].status != 0, "Not registered");
+        providers[providerAddress].status = 4; // Revoked
         providers[providerAddress].lastActive = uint64(block.timestamp);
-        emit ProviderStatusChanged(providerAddress, ProviderStatus.Revoked);
+        emit ProviderStatusChanged(providerAddress, 4);
     }
+
+    function _authorizeUpgrade(address) internal override onlyRole(DEFAULT_ADMIN_ROLE) {}
 }

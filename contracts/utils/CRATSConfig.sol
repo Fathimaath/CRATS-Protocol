@@ -4,6 +4,7 @@ pragma solidity ^0.8.25;
 /**
  * @title CRATSConfig
  * @dev Protocol constants and configuration for CRATS Layer 1
+ * // Source: ERC-3643 T-REX Protocol Standards
  */
 library CRATSConfig {
     // Protocol version
@@ -19,68 +20,32 @@ library CRATSConfig {
     // Default KYC expiry (2 years in seconds)
     uint64 public constant DEFAULT_KYC_EXPIRY = 63072000;
     
-    // Maximum number of investors
-    uint256 public constant MAX_INVESTORS = 100000;
+    /**
+     * @dev Investor roles in the protocol (aligned with T-REX)
+     */
+    uint8 public constant ROLE_NONE = 0;
+    uint8 public constant ROLE_INVESTOR = 1;
+    uint8 public constant ROLE_QUALIFIED = 2;
+    uint8 public constant ROLE_INSTITUTIONAL = 3;
+    uint8 public constant ROLE_ISSUER = 4;
+    uint8 public constant ROLE_REGULATOR = 5;
+    uint8 public constant ROLE_KYC_PROVIDER = 6;
     
     /**
-     * @dev Investor roles in the protocol
+     * @dev Verification status of an identity (aligned with T-REX)
      */
-    enum InvestorRole {
-        None,           // 0: Not assigned
-        Investor,       // 1: Standard retail investor
-        Qualified,      // 2: Qualified investor (higher limits)
-        Institutional,  // 3: Institutional investor
-        Issuer          // 4: SPV / Token Issuer
-    }
+    uint8 public constant STATUS_NONE = 0;
+    uint8 public constant STATUS_PENDING = 1;
+    uint8 public constant STATUS_VERIFIED = 2;
+    uint8 public constant STATUS_SUSPENDED = 3;
+    uint8 public constant STATUS_REVOKED = 4;
     
     /**
-     * @dev Verification status of an identity
+     * @dev Access control roles (hashed for efficiency)
+     * // Source: OpenZeppelin AccessControl patterns
      */
-    enum VerificationStatus {
-        None,       // 0: Not registered
-        Pending,    // 1: KYC in progress
-        Verified,   // 2: Fully verified
-        Suspended,  // 3: Temporarily suspended
-        Revoked     // 4: Permanently revoked
-    }
-    
-    /**
-     * @dev Risk levels for compliance
-     */
-    enum RiskLevel {
-        Lowest,     // 0: Lowest risk
-        Low,        // 1: Low risk
-        Medium,     // 2: Medium risk
-        High,       // 3: High risk
-        VeryHigh,   // 4: Very high risk
-        Extreme     // 5: Extreme risk (blocked)
-    }
-    
-    /**
-     * @dev Get holding limit for a role
-     * @param role Investor role
-     * @return uint256 Holding limit
-     */
-    function getHoldingLimit(InvestorRole role) internal pure returns (uint256) {
-        if (role == InvestorRole.None) return 0;
-        if (role == InvestorRole.Investor) return 10000 * 10**18;      // 10,000 tokens
-        if (role == InvestorRole.Qualified) return 100000 * 10**18;    // 100,000 tokens
-        if (role == InvestorRole.Institutional) return 1000000 * 10**18; // 1,000,000 tokens
-        if (role == InvestorRole.Issuer) return type(uint256).max;      // Unlimited
-        return 0;
-    }
-    
-    /**
-     * @dev Get daily transfer limit for a role
-     * @param role Investor role
-     * @return uint256 Daily limit
-     */
-    function getDailyLimit(InvestorRole role) internal pure returns (uint256) {
-        if (role == InvestorRole.None) return 0;
-        if (role == InvestorRole.Investor) return 1000 * 10**18;       // 1,000 tokens/day
-        if (role == InvestorRole.Qualified) return 10000 * 10**18;     // 10,000 tokens/day
-        if (role == InvestorRole.Institutional) return 100000 * 10**18; // 100,000 tokens/day
-        if (role == InvestorRole.Issuer) return type(uint256).max;      // Unlimited
-        return 0;
-    }
+    bytes32 public constant KYC_PROVIDER_ROLE = keccak256("KYC_PROVIDER_ROLE");
+    bytes32 public constant COMPLIANCE_ROLE = keccak256("COMPLIANCE_ROLE");
+    bytes32 public constant REGULATOR_ROLE = keccak256("REGULATOR_ROLE");
+    bytes32 public constant OPERATOR_ROLE = keccak256("OPERATOR_ROLE");
 }
