@@ -20,6 +20,17 @@ interface IAssetToken is IERC20 {
     event TradingResumed(uint256 timestamp, address initiator);
     event PriceLimitsSet(uint256 limitUpBps, uint256 limitDownBps);
 
+    // === Initializer ===
+
+    function initialize(
+        string memory name,
+        string memory symbol,
+        address admin,
+        address identityRegistry_,
+        address complianceModule_,
+        address circuitBreaker_
+    ) external;
+
     // === View Functions ===
 
     function version() external view returns (string memory);

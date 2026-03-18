@@ -1,47 +1,49 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.25;
 
-import "@openzeppelin/contracts/access/AccessControl.sol";
-import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
+import "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
+import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/utils/ReentrancyGuardUpgradeable.sol";
 import "../interfaces/asset/IAssetRegistry.sol";
 import "../utils/AssetConfig.sol";
 
 /**
  * @title AssetRegistry
- * @dev Document management and Proof of Reserve system
- * Layer 2 v3.0
- * Template contract - deployed per asset
+ * @dev Document management and Proof of Reserve (PoR) system for CRATS Assets.
+ * // Source: T-REX Document Management Pattern
  */
-contract AssetRegistry is AccessControl, ReentrancyGuard, IAssetRegistry {
-
-    // === State Variables ===
-
+contract AssetRegistry is
+    Initializable,
+    AccessControlUpgradeable,
+    ReentrancyGuardUpgradeable,
+    UUPSUpgradeable,
+    IAssetRegistry
+{
+    // === State ===
     Document[] private _documents;
     mapping(bytes32 => uint256) private _docIndex;
-
     PORAttestation[] private _porAttestations;
-
     AssetEvent[] private _assetEvents;
 
     mapping(address => bool) public isOperator;
 
-    // === Modifiers ===
-
-    modifier onlyOperator() {
-        require(isOperator[msg.sender], "AssetRegistry: Caller is not operator");
-        _;
+    /// @custom:oz-upgrades-unsafe-allow constructor
+    constructor() {
+        _disableInitializers();
     }
 
-    // === Constructor ===
+    function initialize(address admin) public initializer {
+        __AccessControl_init();
+        __ReentrancyGuard_init();
+        __UUPSUpgradeable_init();
 
-    constructor(address admin) {
-        require(admin != address(0), "AssetRegistry: Admin cannot be zero address");
         _grantRole(DEFAULT_ADMIN_ROLE, admin);
         _grantRole(AssetConfig.OPERATOR_ROLE, admin);
         isOperator[admin] = true;
     }
 
-    // === External View Functions ===
+    // === View Functions ===
 
     function version() external pure override returns (string memory) {
         return AssetConfig.VERSION;
@@ -69,40 +71,34 @@ contract AssetRegistry is AccessControl, ReentrancyGuard, IAssetRegistry {
         return _documents[index];
     }
 
-    function getDocumentsByType(
-        string calldata docType
-    ) external view override returns (Document[] memory) {
+    function getDocumentsByType(string calldata docType) external view override returns (Document[] memory) {
         uint256 count = 0;
+        bytes32 typeHash = keccak256(bytes(docType));
         for (uint256 i = 0; i < _documents.length; i++) {
-            if (keccak256(bytes(_documents[i].docType)) == keccak256(bytes(docType))) {
-                count++;
-            }
+            if (keccak256(bytes(_documents[i].docType)) == typeHash) count++;
         }
 
         Document[] memory result = new Document[](count);
         uint256 currentIndex = 0;
         for (uint256 i = 0; i < _documents.length; i++) {
-            if (keccak256(bytes(_documents[i].docType)) == keccak256(bytes(docType))) {
+            if (keccak256(bytes(_documents[i].docType)) == typeHash) {
                 result[currentIndex] = _documents[i];
                 currentIndex++;
             }
         }
-
         return result;
     }
 
     function getPORAttestation(uint256 porId) external view override returns (PORAttestation memory) {
-        require(porId < _porAttestations.length, "AssetRegistry: POR not found");
         return _porAttestations[porId];
     }
 
     function getLatestPOR() external view override returns (PORAttestation memory) {
-        require(_porAttestations.length > 0, "AssetRegistry: No POR attestations");
+        require(_porAttestations.length > 0, "AssetRegistry: No POR");
         return _porAttestations[_porAttestations.length - 1];
     }
 
     function getAssetEvent(uint256 eventId) external view override returns (AssetEvent memory) {
-        require(eventId < _assetEvents.length, "AssetRegistry: Event not found");
         return _assetEvents[eventId];
     }
 
@@ -112,43 +108,36 @@ contract AssetRegistry is AccessControl, ReentrancyGuard, IAssetRegistry {
         bytes32 docHash,
         string calldata docType,
         bytes calldata /* metadata */
-    ) external override onlyOperator {
-        require(docHash != bytes32(0), "AssetRegistry: Hash cannot be zero");
-        require(bytes(docType).length > 0, "AssetRegistry: Doc type required");
+    ) external override nonReentrant {
+        require(isOperator[_msgSender()], "AssetRegistry: not operator");
+        require(_docIndex[docHash] == 0, "AssetRegistry: already exists");
 
-        uint256 index = _documents.length;
+        _docIndex[docHash] = _documents.length + 1;
         _documents.push(Document({
             docHash: docHash,
             docType: docType,
             timestamp: block.timestamp,
-            uploader: msg.sender,
+            uploader: _msgSender(),
             verified: false
         }));
-        _docIndex[docHash] = index + 1;
 
-        emit DocumentUploaded(docHash, docType, msg.sender, block.timestamp);
+        emit DocumentUploaded(docHash, docType, _msgSender(), block.timestamp);
     }
 
     function verifyDocument(bytes32 docHash) external override onlyRole(DEFAULT_ADMIN_ROLE) {
-        require(_docIndex[docHash] > 0, "AssetRegistry: Document not found");
-
-        Document storage doc = _documents[_docIndex[docHash] - 1];
-        doc.verified = true;
-
-        emit DocumentVerified(docHash, msg.sender);
+        require(_docIndex[docHash] > 0, "AssetRegistry: not found");
+        _documents[_docIndex[docHash] - 1].verified = true;
+        emit DocumentVerified(docHash, _msgSender());
     }
 
-    function logAssetEvent(
-        string calldata eventType,
-        bytes32 dataHash
-    ) external override onlyOperator {
+    function logAssetEvent(string calldata eventType, bytes32 dataHash) external override {
+        require(isOperator[_msgSender()], "AssetRegistry: not operator");
         _assetEvents.push(AssetEvent({
             eventType: eventType,
             dataHash: dataHash,
             timestamp: block.timestamp,
-            initiator: msg.sender
+            initiator: _msgSender()
         }));
-
         emit AssetEventLogged(eventType, dataHash, block.timestamp);
     }
 
@@ -158,43 +147,34 @@ contract AssetRegistry is AccessControl, ReentrancyGuard, IAssetRegistry {
         uint256 assetValue,
         bytes32 documentHash,
         bytes calldata signature
-    ) external override onlyOperator {
-        require(assetValue > 0, "AssetRegistry: Asset value must be positive");
-        require(signature.length > 0, "AssetRegistry: Signature required");
-
-        bytes32 chainlinkRoundId = bytes32(0);
-
+    ) external override nonReentrant {
+        require(isOperator[_msgSender()], "AssetRegistry: not operator");
         _porAttestations.push(PORAttestation({
             timestamp: block.timestamp,
             assetValue: assetValue,
             documentHash: documentHash,
-            custodian: msg.sender,
+            custodian: _msgSender(),
             signature: signature,
             verified: false,
-            chainlinkRoundId: chainlinkRoundId
+            chainlinkRoundId: bytes32(0)
         }));
-
         emit PORSubmitted(block.timestamp, assetValue);
     }
 
     function verifyPOR(uint256 porId) external override onlyRole(DEFAULT_ADMIN_ROLE) {
-        require(porId < _porAttestations.length, "AssetRegistry: POR not found");
-
-        PORAttestation storage por = _porAttestations[porId];
-        por.verified = true;
-
-        emit PORVerified(porId, msg.sender);
+        _porAttestations[porId].verified = true;
+        emit PORVerified(porId, _msgSender());
     }
 
-    // === Operator Management ===
+    // === Management ===
 
     function addOperator(address operator) external override onlyRole(DEFAULT_ADMIN_ROLE) {
-        require(operator != address(0), "AssetRegistry: Operator cannot be zero address");
         isOperator[operator] = true;
     }
 
     function removeOperator(address operator) external override onlyRole(DEFAULT_ADMIN_ROLE) {
         isOperator[operator] = false;
     }
-}
 
+    function _authorizeUpgrade(address) internal override onlyRole(DEFAULT_ADMIN_ROLE) {}
+}
