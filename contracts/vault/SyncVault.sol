@@ -72,6 +72,9 @@ contract SyncVault is ERC4626, AccessControl, ReentrancyGuard {
         _grantRole(DEFAULT_ADMIN_ROLE, admin);
         _grantRole(OPERATOR_ROLE, admin);
         _grantRole(COMPLIANCE_ROLE, admin);
+
+        // Inflation attack prevention: mint 1 dead share to address(0)
+        _mint(address(0), 1);
     }
 
     // ========== Override ERC4626 Functions ==========

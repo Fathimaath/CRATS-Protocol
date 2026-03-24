@@ -6,8 +6,8 @@ import "@openzeppelin/contracts/access/AccessControl.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import "@openzeppelin/contracts/proxy/Clones.sol";
 import "../utils/AssetConfig.sol";
-import "../vault/SyncVault.sol";
-import "../vault/AsyncVault.sol";
+import "../interfaces/vault/ISyncVault.sol";
+import "../interfaces/vault/IAsyncVault.sol";
 
 /**
  * @title VaultFactory
@@ -178,11 +178,11 @@ contract VaultFactory is AccessControl, ReentrancyGuard {
         // Initialize vault
         if (params.vaultType == VaultType.SYNC) {
             // Initialize SyncVault - set category (creator already has OPERATOR_ROLE from template)
-            SyncVault(vault).setCategory(params.category);
+            ISyncVault(vault).setCategory(params.category);
         } else {
             // Initialize AsyncVault - set category and settlement period
-            AsyncVault(vault).setCategory(params.category);
-            AsyncVault(vault).setSettlementPeriod(params.redeemSettlement);
+            IAsyncVault(vault).setCategory(params.category);
+            IAsyncVault(vault).setSettlementPeriod(params.redeemSettlement);
         }
 
         // Register vault

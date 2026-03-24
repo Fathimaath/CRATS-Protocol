@@ -10,16 +10,16 @@ import "../utils/AssetConfig.sol";
 /**
  * @title YieldDistributor
  * @dev Manages yield distribution for RWA vaults
- * 
+ *
  * Handles different yield types:
  * - Rental income (real estate)
  * - Dividends (equity)
  * - Interest (debt instruments)
  * - Royalties (IP, art)
- * 
+ *
  * Yield is distributed to vaults, increasing share price
  * rather than minting new shares (ERC-4626 standard).
- * 
+ *
  * @dev Integrates with Layer 1 InvestorRightsRegistry for entitlement tracking
  */
 contract YieldDistributor is AccessControl, ReentrancyGuard {
@@ -229,7 +229,7 @@ contract YieldDistributor is AccessControl, ReentrancyGuard {
         // Validate schedule if provided
         if (scheduleId != bytes32(0)) {
             require(schedule.active, "YieldDistributor: Schedule not active");
-            
+
             // Update schedule
             schedule.lastDistribution = block.timestamp;
             schedule.nextDue = block.timestamp + schedule.frequency;

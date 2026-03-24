@@ -12,14 +12,14 @@ import "../interfaces/identity/IIdentityRegistry.sol";
 /**
  * @title RedemptionManager
  * @dev Manages redemption queues and processing for RWA vaults
- * 
+ *
  * Features:
  * - FIFO redemption queue
  * - Pro-rata distribution during liquidity constraints
  * - Redemption gates (limits % redeemable per period)
  * - Scheduled redemption windows
  * - Priority processing for institutional investors
- * 
+ *
  * @dev Integrates with AsyncVault for T+1, T+2, T+7 settlement
  */
 contract RedemptionManager is AccessControl, ReentrancyGuard {
@@ -250,7 +250,7 @@ contract RedemptionManager is AccessControl, ReentrancyGuard {
         uint256 totalAssets
     ) external onlyRole(PROCESSOR_ROLE) nonReentrant {
         uint256 totalShares = 0;
-        
+
         // Calculate total shares
         for (uint256 i = 0; i < requestIds.length; i++) {
             RedemptionRequest storage request = redemptionRequests[vault][requestIds[i]];
@@ -262,10 +262,10 @@ contract RedemptionManager is AccessControl, ReentrancyGuard {
         uint256 remainingAssets = totalAssets;
         for (uint256 i = 0; i < requestIds.length; i++) {
             RedemptionRequest storage request = redemptionRequests[vault][requestIds[i]];
-            
+
             // Calculate pro-rata share
             uint256 assets = (request.shares * totalAssets) / totalShares;
-            
+
             // Use remaining assets for last request to avoid rounding issues
             if (i == requestIds.length - 1) {
                 assets = remainingAssets;
@@ -430,7 +430,7 @@ contract RedemptionManager is AccessControl, ReentrancyGuard {
      */
     function _checkRedemptionGate(address vault, uint256 shares) internal view {
         RedemptionGate memory gate = redemptionGates[vault];
-        
+
         if (!gate.active) {
             return;
         }
@@ -453,7 +453,7 @@ contract RedemptionManager is AccessControl, ReentrancyGuard {
      */
     function _updateRedemptionGate(address vault, uint256 assets) internal {
         RedemptionGate memory gate = redemptionGates[vault];
-        
+
         if (!gate.active) {
             return;
         }

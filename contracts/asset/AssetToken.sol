@@ -97,7 +97,7 @@ contract AssetToken is
         return totalSupply(); 
     }
 
-    function totalBurned() external view override returns (uint256) {
+    function totalBurned() external pure override returns (uint256) {
         return 0;
     }
 

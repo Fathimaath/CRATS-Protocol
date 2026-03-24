@@ -52,6 +52,12 @@ contract AsyncVault is ERC20, AccessControl, ReentrancyGuard, IERC7540 {
     /// @dev Operator approvals: controller => operator => approved
     mapping(address => mapping(address => bool)) public override isOperator;
 
+    /// @dev Next deposit request ID per controller
+    mapping(address => uint256) private _nextDepositRequestId;
+
+    /// @dev Next redeem request ID per controller
+    mapping(address => uint256) private _nextRedeemRequestId;
+
     /// @dev Layer 1 Identity Registry
     address public identityRegistry;
 
@@ -122,6 +128,9 @@ contract AsyncVault is ERC20, AccessControl, ReentrancyGuard, IERC7540 {
         _grantRole(OPERATOR_ROLE, admin);
         _grantRole(COMPLIANCE_ROLE, admin);
         _grantRole(FULFILLER_ROLE, admin);
+
+        // Inflation attack prevention: mint 1 dead share to address(0)
+        _mint(address(0), 1);
     }
 
     // ========== IERC4626 View Functions ==========
@@ -204,8 +213,11 @@ contract AsyncVault is ERC20, AccessControl, ReentrancyGuard, IERC7540 {
         _pendingDeposit[controller] = PendingDeposit(assets + currentPendingAssets);
         _totalPendingDepositAssets += assets;
 
-        emit DepositRequest(controller, owner, 0, msg.sender, assets);
-        return 0;
+        // Generate unique request ID
+        requestId = _nextDepositRequestId[controller]++;
+
+        emit DepositRequest(controller, owner, requestId, msg.sender, assets);
+        return requestId;
     }
 
     function pendingDepositRequest(uint256, address controller)
@@ -226,8 +238,8 @@ contract AsyncVault is ERC20, AccessControl, ReentrancyGuard, IERC7540 {
         claimableAssets = _claimableDeposit[controller].assets;
     }
 
-    function nextDepositRequestId(address) external pure override returns (uint256) {
-        return 0;
+    function nextDepositRequestId(address controller) external view override returns (uint256) {
+        return _nextDepositRequestId[controller];
     }
 
     // ========== IERC7540 Async Redeem Functions ==========
@@ -250,8 +262,11 @@ contract AsyncVault is ERC20, AccessControl, ReentrancyGuard, IERC7540 {
         _pendingRedeem[controller] = PendingRedeem(shares + currentPendingShares);
         _totalPendingRedeemShares += shares;
 
-        emit RedeemRequest(controller, owner, 0, msg.sender, shares);
-        return 0;
+        // Generate unique request ID
+        requestId = _nextRedeemRequestId[controller]++;
+
+        emit RedeemRequest(controller, owner, requestId, msg.sender, shares);
+        return requestId;
     }
 
     function pendingRedeemRequest(uint256, address controller)
@@ -272,8 +287,8 @@ contract AsyncVault is ERC20, AccessControl, ReentrancyGuard, IERC7540 {
         claimableShares = _claimableRedeem[controller].shares;
     }
 
-    function nextRedeemRequestId(address) external pure override returns (uint256) {
-        return 0;
+    function nextRedeemRequestId(address controller) external view override returns (uint256) {
+        return _nextRedeemRequestId[controller];
     }
 
     // ========== Fulfillment Logic (Owner Only) ==========
