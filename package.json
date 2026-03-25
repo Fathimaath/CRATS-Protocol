@@ -33,6 +33,7 @@
   "description": "CRATS Protocol Layer 1 - Multi-Chain Identity System for Regulated RWA Tokenization",
   "devDependencies": {
     "@nomicfoundation/hardhat-toolbox": "^6.1.2",
+    "@openzeppelin/hardhat-upgrades": "^3.9.1",
     "dotenv": "^16.0.3",
     "hardhat": "^2.22.3"
   },

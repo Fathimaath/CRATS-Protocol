@@ -149,6 +149,12 @@ contract AssetRegistry is
         bytes calldata signature
     ) external override nonReentrant {
         require(isOperator[_msgSender()], "AssetRegistry: not operator");
+        
+        // Get Chainlink round ID if feed is configured (Section 6.2 - NEW v3.0)
+        bytes32 chainlinkRoundId = bytes32(0);
+        // Note: Chainlink feed would be configured externally
+        // This is a placeholder for when Chainlink PoR is integrated
+        
         _porAttestations.push(PORAttestation({
             timestamp: block.timestamp,
             assetValue: assetValue,
@@ -156,7 +162,7 @@ contract AssetRegistry is
             custodian: _msgSender(),
             signature: signature,
             verified: false,
-            chainlinkRoundId: bytes32(0)
+            chainlinkRoundId: chainlinkRoundId
         }));
         emit PORSubmitted(block.timestamp, assetValue);
     }

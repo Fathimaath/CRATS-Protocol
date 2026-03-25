@@ -114,7 +114,7 @@ contract AssetFactory is
             name: name,
             symbol: symbol,
             initialSupply: initialSupply,
-            categoryId: "" 
+            categoryId: "REAL_ESTATE"
         });
         require(IAssetPlugin(plugins[category]).validateCreation(_msgSender(), params), "AssetFactory: plugin validation failed");
 

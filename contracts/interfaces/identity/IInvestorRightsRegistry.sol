@@ -47,4 +47,15 @@ interface IInvestorRightsRegistry {
     function exerciseVote(address investor, address tokenContract, uint256 voteAmount) external;
     function requestRedemption(address investor, address tokenContract) external;
     function getRights(address investor, address tokenContract) external view returns (InvestorRights memory);
+
+    /**
+     * @notice Enforce investor rights (regulator/issuer only).
+     * @dev Can be used to force dividend payment, enable voting, or process redemption.
+     */
+    function enforceRight(
+        address investor,
+        address tokenContract,
+        uint8 rightType,
+        bytes calldata data
+    ) external;
 }

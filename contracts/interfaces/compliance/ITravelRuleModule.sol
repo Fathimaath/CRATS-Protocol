@@ -40,4 +40,32 @@ interface ITravelRuleModule {
     ) external;
 
     function getTransfer(bytes32 txHash) external view returns (TransferRecord memory);
+
+    /**
+     * @notice Get transfer history for a wallet address.
+     * @dev Returns array of transaction hashes for the given wallet.
+     */
+    function getTransferHistory(address wallet) external view returns (bytes32[] memory);
+
+    /**
+     * @notice Set the Travel Rule threshold amount.
+     * @dev Only callable by admin. Threshold is in token decimals.
+     */
+    function setThreshold(uint256 threshold) external;
+
+    /**
+     * @notice Get the current Travel Rule threshold.
+     */
+    function threshold() external view returns (uint256);
+
+    /**
+     * @notice Mark transfer as reported to regulatory authority.
+     * @dev Only callable by regulator role.
+     */
+    function reportToAuthority(bytes32 txHash, bytes32 authorityHash) external;
+
+    /**
+     * @notice Get count of transfers reported to authorities.
+     */
+    function getReportedCount() external view returns (uint256);
 }

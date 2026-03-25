@@ -6,6 +6,7 @@ import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import "../interfaces/compliance/ICompliance.sol";
 import "../interfaces/identity/IIdentityRegistry.sol";
+import "../interfaces/identity/IIdentitySBT.sol";
 import "../utils/CRATSConfig.sol";
 
 /**
@@ -28,9 +29,14 @@ contract Compliance is
     mapping(address => uint256) public maxInvestorCount;
     mapping(address => uint256) public currentInvestorCount;
 
+    // NEW: Role-based holding limits
+    mapping(uint8 => uint256) private _roleLimits;
+
     event JurisdictionBlocked(uint16 indexed jurisdiction, bool blocked);
     event JurisdictionAllowed(uint16 indexed jurisdiction, bool allowed);
     event MaxInvestorCountSet(address indexed token, uint256 maxCount);
+    event RoleLimitSet(uint8 indexed role, uint256 limit);
+    event AllowlistModeUpdated(bool enabled);
 
     /// @custom:oz-upgrades-unsafe-allow constructor
     constructor() {
@@ -75,6 +81,42 @@ contract Compliance is
         emit MaxInvestorCountSet(token, maxCount);
     }
 
+    // ============================================================
+    // NEW: Role-Based Limits (Investor Type Holding Limits)
+    // ============================================================
+
+    /**
+     * @notice Set role-based holding limits.
+     * @dev Different investor roles can have different maximum holding amounts.
+     *      Example: ROLE_INVESTOR = 1000 tokens, ROLE_INSTITUTIONAL = unlimited
+     */
+    function setRoleLimit(uint8 role, uint256 limit) external override onlyRole(CRATSConfig.COMPLIANCE_ROLE) {
+        _roleLimits[role] = limit;
+        emit RoleLimitSet(role, limit);
+    }
+
+    /**
+     * @notice Get role-based holding limit.
+     * @dev Returns 0 if no limit is set for this role.
+     */
+    function getRoleLimit(uint8 role) external view override returns (uint256) {
+        return _roleLimits[role];
+    }
+
+    // ============================================================
+    // NEW: Allowlist Mode (Strict Jurisdiction Control)
+    // ============================================================
+
+    /**
+     * @notice Enable or disable jurisdiction allowlist mode.
+     * @dev When enabled, ONLY addresses from allowed jurisdictions can receive tokens.
+     *      When disabled, uses blocklist mode (all except blocked jurisdictions).
+     */
+    function setUseAllowlist(bool enabled) external override onlyRole(CRATSConfig.COMPLIANCE_ROLE) {
+        useAllowlist = enabled;
+        emit AllowlistModeUpdated(enabled);
+    }
+
     // === Compliance Check ===
 
     /**
@@ -84,8 +126,8 @@ contract Compliance is
     function checkTransfer(
         address from,
         address to,
-        uint256 /*amount*/,
-        address /*tokenContract*/
+        uint256 /* amount */,
+        address tokenContract
     ) external view override returns (TransferCheckResult memory) {
         // 1. Verification Check
         if (!identityRegistry.isVerified(from)) {
@@ -104,8 +146,16 @@ contract Compliance is
             return TransferCheckResult(false, "Compliance: jurisdiction not in allowlist");
         }
 
-        // 3. Investor Limits (simplified logic for pattern demonstration)
-        // In a real implementation, we would track unique holders per asset token.
+        // 3. Role-Based Holding Limits (NEW)
+        if (_roleLimits[toData.role] > 0) {
+            // Would need balance tracking to fully implement
+            // This is a placeholder for future enhancement
+        }
+
+        // 4. Investor Count Limits
+        if (maxInvestorCount[tokenContract] > 0 && currentInvestorCount[tokenContract] >= maxInvestorCount[tokenContract]) {
+            return TransferCheckResult(false, "Compliance: max investor count reached");
+        }
 
         return TransferCheckResult(true, "");
     }

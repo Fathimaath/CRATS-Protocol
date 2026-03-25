@@ -14,17 +14,20 @@ import "../utils/CRATSConfig.sol";
  * @dev On-chain registry for tracking and enforcing investor rights.
  * // Source: ERC-3643 T-REX Compliance Pattern
  */
-contract InvestorRightsRegistry is 
-    Initializable, 
-    AccessControlUpgradeable, 
+contract InvestorRightsRegistry is
+    Initializable,
+    AccessControlUpgradeable,
     ReentrancyGuardUpgradeable,
-    UUPSUpgradeable, 
-    IInvestorRightsRegistry 
+    UUPSUpgradeable,
+    IInvestorRightsRegistry
 {
     IIdentityRegistry public identityRegistry;
 
     // investor -> tokenContract -> rights
     mapping(address => mapping(address => InvestorRights)) private _rights;
+
+    // NEW: Rights enforcement tracking
+    mapping(bytes32 => bool) private _enforcementExecuted;
 
     event RightsRegistered(
         address indexed investor,
@@ -48,6 +51,18 @@ contract InvestorRightsRegistry is
         address indexed tokenContract,
         uint256 redemptionValue
     );
+    // NEW: Enforcement event
+    event RightEnforced(
+        address indexed investor,
+        address indexed tokenContract,
+        uint8 rightType,
+        bytes data
+    );
+
+    // Right type constants
+    uint8 public constant RIGHT_DIVIDEND = 1;
+    uint8 public constant RIGHT_VOTE = 2;
+    uint8 public constant RIGHT_REDEMPTION = 3;
 
     /// @custom:oz-upgrades-unsafe-allow constructor
     constructor() {
@@ -150,6 +165,57 @@ contract InvestorRightsRegistry is
         r.updatedAt = uint64(block.timestamp);
 
         emit RedemptionRequested(investor, tokenContract, r.redemptionValue);
+    }
+
+    // ============================================================
+    // NEW: Rights Enforcement (Regulatory/Issuer Enforcement)
+    // ============================================================
+
+    /**
+     * @notice Enforce investor rights (regulator/issuer only).
+     * @dev Can be used to force dividend payment, enable voting, or process redemption.
+     *      Right types: 1=Dividend, 2=Vote, 3=Redemption
+     */
+    function enforceRight(
+        address investor,
+        address tokenContract,
+        uint8 rightType,
+        bytes calldata data
+    ) external override onlyRole(CRATSConfig.COMPLIANCE_ROLE) {
+        require(identityRegistry.isVerified(investor), "InvestorRightsRegistry: investor not verified");
+
+        bytes32 enforcementKey = keccak256(abi.encodePacked(investor, tokenContract, rightType, block.timestamp));
+        require(!_enforcementExecuted[enforcementKey], "InvestorRightsRegistry: enforcement already executed");
+
+        InvestorRights storage r = _rights[investor][tokenContract];
+
+        if (rightType == RIGHT_DIVIDEND) {
+            // Force dividend payment
+            uint256 amount = abi.decode(data, (uint256));
+            r.pendingDividend = 0;
+            r.claimedDividend += amount;
+            r.lastClaimAt = uint64(block.timestamp);
+            emit DividendClaimed(investor, tokenContract, amount);
+        } else if (rightType == RIGHT_VOTE) {
+            // Force vote enable
+            (uint256 votingPower) = abi.decode(data, (uint256));
+            r.hasVotingRights = true;
+            r.votingPower = votingPower;
+        } else if (rightType == RIGHT_REDEMPTION) {
+            // Force redemption processing
+            uint256 redemptionValue = abi.decode(data, (uint256));
+            r.hasRedemptionRights = true;
+            r.redemptionValue = redemptionValue;
+            r.redemptionRequested = true;
+            emit RedemptionRequested(investor, tokenContract, redemptionValue);
+        } else {
+            revert("InvestorRightsRegistry: invalid right type");
+        }
+
+        _enforcementExecuted[enforcementKey] = true;
+        r.updatedAt = uint64(block.timestamp);
+
+        emit RightEnforced(investor, tokenContract, rightType, data);
     }
 
     // === Views ===

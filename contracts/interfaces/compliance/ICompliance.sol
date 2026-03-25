@@ -25,4 +25,22 @@ interface ICompliance {
         uint256 amount,
         address tokenContract
     ) external view returns (TransferCheckResult memory);
+
+    /**
+     * @notice Set role-based holding limits.
+     * @param role The investor role (from CRATSConfig)
+     * @param limit Maximum holding amount for this role
+     */
+    function setRoleLimit(uint8 role, uint256 limit) external;
+
+    /**
+     * @notice Get role-based holding limit.
+     */
+    function getRoleLimit(uint8 role) external view returns (uint256);
+
+    /**
+     * @notice Enable or disable jurisdiction allowlist mode.
+     * @param enabled If true, only allowed jurisdictions can receive tokens
+     */
+    function setUseAllowlist(bool enabled) external;
 }

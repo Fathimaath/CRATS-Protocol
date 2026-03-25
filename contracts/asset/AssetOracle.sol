@@ -153,7 +153,30 @@ contract AssetOracle is
 
     function _executeNAVUpdate(uint256 proposalId) internal {
         NAVProposal storage p = proposals[proposalId];
-        
+
+        // Chainlink PoR Verification (Section 5.2 - NEW v3.0)
+        if (chainlinkPoRFeed != address(0)) {
+            try AggregatorV3Interface(chainlinkPoRFeed).latestRoundData() returns (
+                uint80 /*roundId*/,
+                int256 reserveValue,
+                uint256 /*startedAt*/,
+                uint256 updatedAt,
+                uint80 /*answeredInRound*/
+            ) {
+                require(reserveValue > 0, "AssetOracle: invalid PoR value");
+                require(
+                    p.proposedNAV <= uint256(reserveValue),
+                    "AssetOracle: NAV exceeds verified reserve"
+                );
+                require(
+                    updatedAt >= block.timestamp - 3600,
+                    "AssetOracle: PoR stale"
+                );
+            } catch {
+                // Skip if feed temporarily unavailable
+            }
+        }
+
         lastNAV = currentNAV;
         currentNAV = p.proposedNAV;
         lastNAVUpdate = block.timestamp;
