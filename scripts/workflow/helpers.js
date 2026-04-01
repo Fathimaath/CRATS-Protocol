@@ -7,12 +7,13 @@ const path = require("path");
  */
 async function getDeploymentInfo() {
     const networkName = hre.network.name === "unknown" ? "localhost" : hre.network.name;
-    const deploymentFile = path.join(__dirname, "..", "deployments", `${networkName}-deployment.json`);
-    
+    // Look in root deployments folder
+    const deploymentFile = path.join(__dirname, "..", "..", "deployments", `${networkName}-deployment.json`);
+
     if (!fs.existsSync(deploymentFile)) {
         throw new Error(`Deployment file not found: ${deploymentFile}. Run deployment scripts first.`);
     }
-    
+
     return JSON.parse(fs.readFileSync(deploymentFile, "utf8"));
 }
 

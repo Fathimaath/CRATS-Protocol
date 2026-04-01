@@ -40,7 +40,11 @@ async function main() {
   // === 1. Deploy KYCProvidersRegistry ===
   console.log("1. Deploying KYCProvidersRegistry...");
   const KYCProvidersRegistry = await hre.ethers.getContractFactory("KYCProvidersRegistry");
-  const kycRegistry = await KYCProvidersRegistry.deploy();
+  const kycRegistry = await hre.upgrades.deployProxy(
+    KYCProvidersRegistry,
+    [config.admin],
+    { kind: "uups" }
+  );
   await kycRegistry.waitForDeployment();
   deployedContracts.kycRegistry = await kycRegistry.getAddress();
   console.log("   KYCProvidersRegistry deployed:", deployedContracts.kycRegistry);
@@ -48,9 +52,10 @@ async function main() {
   // === 2. Deploy IdentitySBT ===
   console.log("\n2. Deploying IdentitySBT...");
   const IdentitySBT = await hre.ethers.getContractFactory("IdentitySBT");
-  const identitySBT = await IdentitySBT.deploy(
-    config.admin,
-    deployedContracts.kycRegistry
+  const identitySBT = await hre.upgrades.deployProxy(
+    IdentitySBT,
+    ["CRATS Identity", "CRATS-ID", config.admin],
+    { kind: "uups" }
   );
   await identitySBT.waitForDeployment();
   deployedContracts.identitySBT = await identitySBT.getAddress();
@@ -59,10 +64,10 @@ async function main() {
   // === 3. Deploy IdentityRegistry ===
   console.log("\n3. Deploying IdentityRegistry...");
   const IdentityRegistry = await hre.ethers.getContractFactory("IdentityRegistry");
-  const identityRegistry = await IdentityRegistry.deploy(
-    config.admin,
-    deployedContracts.identitySBT,
-    deployedContracts.kycRegistry
+  const identityRegistry = await hre.upgrades.deployProxy(
+    IdentityRegistry,
+    [config.admin, deployedContracts.identitySBT, deployedContracts.kycRegistry],
+    { kind: "uups" }
   );
   await identityRegistry.waitForDeployment();
   deployedContracts.identityRegistry = await identityRegistry.getAddress();
@@ -70,10 +75,11 @@ async function main() {
 
   // === 4. Deploy ComplianceModule ===
   console.log("\n4. Deploying ComplianceModule...");
-  const ComplianceModule = await hre.ethers.getContractFactory("ComplianceModule");
-  const complianceModule = await ComplianceModule.deploy(
-    config.admin,
-    deployedContracts.identityRegistry
+  const Compliance = await hre.ethers.getContractFactory("Compliance");
+  const complianceModule = await hre.upgrades.deployProxy(
+    Compliance,
+    [config.admin, deployedContracts.identityRegistry],
+    { kind: "uups" }
   );
   await complianceModule.waitForDeployment();
   deployedContracts.complianceModule = await complianceModule.getAddress();
@@ -82,11 +88,10 @@ async function main() {
   // === 5. Deploy TravelRuleModule (NEW v3.0) ===
   console.log("\n5. Deploying TravelRuleModule (v3.0)...");
   const TravelRuleModule = await hre.ethers.getContractFactory("TravelRuleModule");
-  const travelRuleModule = await TravelRuleModule.deploy(
-    config.admin,
-    deployedContracts.identityRegistry,
-    deployedContracts.complianceModule,
-    config.travelRuleThreshold
+  const travelRuleModule = await hre.upgrades.deployProxy(
+    TravelRuleModule,
+    [config.admin, deployedContracts.identityRegistry, config.travelRuleThreshold],
+    { kind: "uups" }
   );
   await travelRuleModule.waitForDeployment();
   deployedContracts.travelRuleModule = await travelRuleModule.getAddress();
@@ -95,9 +100,10 @@ async function main() {
   // === 6. Deploy InvestorRightsRegistry (NEW v3.0) ===
   console.log("\n6. Deploying InvestorRightsRegistry (v3.0)...");
   const InvestorRightsRegistry = await hre.ethers.getContractFactory("InvestorRightsRegistry");
-  const investorRightsRegistry = await InvestorRightsRegistry.deploy(
-    config.admin,
-    deployedContracts.identityRegistry
+  const investorRightsRegistry = await hre.upgrades.deployProxy(
+    InvestorRightsRegistry,
+    [config.admin, deployedContracts.identityRegistry],
+    { kind: "uups" }
   );
   await investorRightsRegistry.waitForDeployment();
   deployedContracts.investorRightsRegistry = await investorRightsRegistry.getAddress();
@@ -176,8 +182,11 @@ async function main() {
     124,  // CA
     784,  // AE
   ];
-  const allowJurisdictionsTx = await complianceModule.allowJurisdictions(jurisdictions);
-  await allowJurisdictionsTx.wait();
+  console.log("  Setting allowed jurisdictions...");
+  for (const jurisdiction of jurisdictions) {
+    const tx = await complianceModule.setJurisdictionAllowed(jurisdiction, true);
+    await tx.wait();
+  }
   console.log("   Default jurisdictions configured");
 
   // === Final Summary ===
@@ -213,10 +222,12 @@ async function main() {
 
   const networkName = hre.network.name === "unknown" ? "localhost" : hre.network.name;
   const deploymentFile = path.join(deploymentsDir, `${networkName}-deployment.json`);
-  
+
+  // Custom JSON stringify to handle BigInt
   fs.writeFileSync(
     deploymentFile,
-    JSON.stringify(deploymentInfo, null, 2)
+    JSON.stringify(deploymentInfo, (key, value) =>
+      typeof value === 'bigint' ? value.toString() : value, 2)
   );
   
   console.log("Deployment info saved to:", deploymentFile);
