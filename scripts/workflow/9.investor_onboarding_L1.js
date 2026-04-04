@@ -1,4 +1,4 @@
-const { getDeploymentInfo } = require("./helpers");
+const { getDeploymentInfo, saveWorkflowResult } = require("./helpers");
 const hre = require("hardhat");
 
 /**
@@ -33,7 +33,23 @@ async function main() {
     );
     await tx.wait();
     
-    console.log("✅ Investor identity registered.");
+    console.log("✅ Investor KYC verified and SBT active.");
+
+    await saveWorkflowResult(10, {
+        name: "Investor SBT Minting",
+        txHash: tx.hash,
+        contract: deployment.contracts.identitySBT,
+        details: `Investor Status: VERIFIED`,
+        layer: "L1"
+    });
+
+    await saveWorkflowResult(9, {
+        name: "Investor Onboarding",
+        txHash: tx.hash,
+        contract: deployment.contracts.identityRegistry,
+        details: `Investor: ${investor.address}`,
+        layer: "L1"
+    });
 }
 
-main().catch(console.error);
+main().then(() => process.exit(0)).catch(err => { console.error(err); process.exit(1); });

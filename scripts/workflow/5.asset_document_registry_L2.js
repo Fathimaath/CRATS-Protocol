@@ -1,4 +1,4 @@
-const { getDeploymentInfo } = require("./helpers");
+const { getDeploymentInfo, saveDeploymentInfo, saveWorkflowResult } = require("./helpers");
 const hre = require("hardhat");
 
 /**
@@ -36,9 +36,17 @@ async function main() {
         deployment.contracts.azureToken,
         documents
     );
-    await tx.wait();
+    const receipt = await tx.wait();
 
     console.log("✅ Documents registered successfully.");
+
+    await saveWorkflowResult(5, {
+        name: "Asset Document Registry",
+        txHash: receipt.hash || tx.hash,
+        contract: deployment.contracts.azureToken,
+        details: `Registered: PropTitle.pdf, Appr.pdf`,
+        layer: "L2"
+    });
 }
 
-main().catch(console.error);
+main().then(() => process.exit(0)).catch(err => { console.error(err); process.exit(1); });

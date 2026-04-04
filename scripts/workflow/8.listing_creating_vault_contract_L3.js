@@ -1,4 +1,4 @@
-const { getDeploymentInfo, saveDeploymentInfo } = require("./helpers");
+const { getDeploymentInfo, saveDeploymentInfo, saveWorkflowResult } = require("./helpers");
 const hre = require("hardhat");
 
 /**
@@ -15,6 +15,12 @@ async function main() {
     }
 
     const vaultFactory = await hre.ethers.getContractAt("VaultFactory", deployment.contracts.vaultFactory);
+    
+    // Check if vault already exists
+    if (deployment.contracts.azureVault) {
+        console.log(`ℹ️ Vault already created at: ${deployment.contracts.azureVault}. Skipping.`);
+        return;
+    }
     
     const categoryId = hre.ethers.id("REAL_ESTATE");
     
@@ -42,6 +48,14 @@ async function main() {
     // Save to deployment info
     deployment.contracts.azureVault = vaultAddress;
     await saveDeploymentInfo(deployment);
+
+    await saveWorkflowResult(8, {
+        name: "Vault Creation",
+        txHash: receipt.hash || tx.hash,
+        contract: vaultAddress,
+        details: `SyncVault (ERC-4626) for AZURE`,
+        layer: "L3"
+    });
 }
 
-main().catch(console.error);
+main().then(() => process.exit(0)).catch(err => { console.error(err); process.exit(1); });

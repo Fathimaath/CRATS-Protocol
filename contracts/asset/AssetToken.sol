@@ -34,6 +34,8 @@ contract AssetToken is
     address public circuitBreaker;
 
     mapping(address => bool) private _frozen;
+    uint256 public currentNAV;
+    mapping(bytes32 => string) public assetDocuments;
 
     struct ForceTransferRecord {
         address from;
@@ -71,6 +73,7 @@ contract AssetToken is
         circuitBreaker = circuitBreaker_;
 
         _grantRole(DEFAULT_ADMIN_ROLE, admin);
+        _grantRole(DEFAULT_ADMIN_ROLE, _msgSender()); // Grant to Factory for initial mint
         _grantRole(CRATSConfig.COMPLIANCE_ROLE, admin);
         _grantRole(CRATSConfig.REGULATOR_ROLE, admin);
     }
@@ -206,6 +209,20 @@ contract AssetToken is
 
     function setCircuitBreaker(address newCircuitBreaker) external override onlyRole(DEFAULT_ADMIN_ROLE) {
         circuitBreaker = newCircuitBreaker;
+    }
+
+    // === Document & Oracle Management ===
+
+    function addDocuments(bytes32[] calldata docHashes, string[] calldata docUris) external override onlyRole(DEFAULT_ADMIN_ROLE) {
+        require(docHashes.length == docUris.length, "AssetToken: Length mismatch");
+        for (uint256 i = 0; i < docHashes.length; i++) {
+            assetDocuments[docHashes[i]] = docUris[i];
+        }
+    }
+
+    function setNAV(uint256 newNAV) external override onlyRole(DEFAULT_ADMIN_ROLE) {
+        currentNAV = newNAV;
+        emit TradingResumed(block.timestamp, _msgSender()); // Using an existing event for demo simplicity
     }
 
     // === Compliance Hook ===

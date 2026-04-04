@@ -1,0 +1,14 @@
+{
+  "lastRun": "2026-04-01T16:46:25.857Z",
+  "steps": [
+    {
+      "name": "SBT Minting",
+      "txHash": "View-only (Minted in Step 1)",
+      "contract": "0x0724F18B2aA7D6413D3fDcF6c0c27458a8170Dd9",
+      "details": "Token ID: 1, DID: did:crats:nexus-realty",
+      "layer": "L1",
+      "id": 3,
+      "timestamp": "2026-04-01T16:46:25.857Z"
+    }
+  ]
+}

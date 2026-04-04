@@ -1,4 +1,4 @@
-const { getDeploymentInfo } = require("./helpers");
+const { getDeploymentInfo, saveWorkflowResult } = require("./helpers");
 const hre = require("hardhat");
 
 /**
@@ -29,6 +29,14 @@ async function main() {
     console.log("Treasury Balance:", hre.ethers.formatEther(balance), "AZURE");
 
     console.log("✅ Tokens minted to treasury successfully.");
+
+    await saveWorkflowResult(7, {
+        name: "Minting to Treasury",
+        txHash: receipt.hash || tx.hash,
+        contract: deployment.contracts.azureToken,
+        details: `Amount: 10M AZURE minted to Issuer`,
+        layer: "L2"
+    });
 }
 
-main().catch(console.error);
+main().then(() => process.exit(0)).catch(err => { console.error(err); process.exit(1); });

@@ -1,4 +1,4 @@
-const { getDeploymentInfo } = require("./helpers");
+const { getDeploymentInfo, saveWorkflowResult } = require("./helpers");
 const hre = require("hardhat");
 
 /**
@@ -18,13 +18,28 @@ async function main() {
     }
     console.log("Identity Token ID:", tokenId.toString());
 
-    // Update status to VERIFIED (2)
     const statusVerified = 2;
+
+    // Check current status
+    const identityData = await identitySBT.getIdentity(tokenId);
+    if (identityData.status == statusVerified) {
+        console.log(`ℹ️ Issuer already VERIFIED. Skipping.`);
+        return;
+    }
+
     console.log("Updating identity status to VERIFIED...");
-    const tx = await identitySBT.updateStatus(tokenId, statusVerified);
-    await tx.wait();
+    const tx = await identitySBT.connect(deployer).updateStatus(tokenId, statusVerified);
+    const receipt = await tx.wait();
 
     console.log("✅ Issuer KYC verified successfully.");
+
+    await saveWorkflowResult(2, {
+        name: "KYC Verification",
+        txHash: receipt.hash || tx.hash,
+        contract: deployment.contracts.identitySBT,
+        details: `Issuer Verified (Token ID: ${tokenId})`,
+        layer: "L1"
+    });
 }
 
-main().catch(console.error);
+main().then(() => process.exit(0)).catch(err => { console.error(err); process.exit(1); });

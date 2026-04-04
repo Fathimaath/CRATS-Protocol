@@ -1,4 +1,4 @@
-const { getDeploymentInfo } = require("./helpers");
+const { getDeploymentInfo, saveWorkflowResult } = require("./helpers");
 const hre = require("hardhat");
 
 /**
@@ -26,6 +26,14 @@ async function main() {
     await tx.wait();
 
     console.log("✅ Yield distributed. Share price increased.");
+
+    await saveWorkflowResult(12, {
+        name: "Yield Distribution",
+        txHash: distTx.hash || syncTx.hash,
+        contract: deployment.contracts.azureVault,
+        details: `Distributed 500 AZURE yield to vault`,
+        layer: "L3"
+    });
 }
 
-main().catch(console.error);
+main().then(() => process.exit(0)).catch(err => { console.error(err); process.exit(1); });

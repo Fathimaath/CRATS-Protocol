@@ -1,191 +1,152 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.15;
+pragma solidity ^0.8.25;
 
-import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
+import "@openzeppelin/contracts-upgradeable/token/ERC20/ERC20Upgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/token/ERC20/extensions/ERC4626Upgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/utils/ReentrancyGuardUpgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
+import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
-import "@openzeppelin/contracts/token/ERC20/extensions/ERC4626.sol";
-import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
-import "@openzeppelin/contracts/access/AccessControl.sol";
 import "../interfaces/identity/IIdentityRegistry.sol";
-import "../interfaces/compliance/ICompliance.sol";
+import "../interfaces/vault/ISyncVault.sol";
 import "../utils/AssetConfig.sol";
 
 /**
  * @title SyncVault
- * @dev ERC-4626 Tokenized Vault with synchronous deposit/redeem
- * 
- * BASED ON: OpenZeppelin ERC-4626 Implementation
- * Source: https://github.com/OpenZeppelin/openzeppelin-contracts/blob/master/contracts/token/ERC20/extensions/ERC4626.sol
- * Audit: OpenZeppelin Audits 2022-10
- * 
- * Features:
- * - Atomic deposit/redeem (T+0 settlement)
- * - Share price appreciation for yield
- * - Inflation attack prevention
- * - Layer 1 compliance integration
+ * @dev Upgradeable ERC-4626 Tokenized Vault with synchronous deposit/redeem
+ * Compatible with Clones (ERC-1167)
  */
-contract SyncVault is ERC4626, AccessControl, ReentrancyGuard {
+contract SyncVault is 
+    Initializable, 
+    ERC4626Upgradeable, 
+    AccessControlUpgradeable, 
+    ReentrancyGuardUpgradeable,
+    ISyncVault 
+{
     using SafeERC20 for IERC20;
 
-    // ========== State Variables ==========
-
-    /// @dev Layer 1 Identity Registry
+    // === State ===
     address public identityRegistry;
-
-    /// @dev Layer 1 Compliance Module
     address public complianceModule;
-
-    /// @dev Circuit breaker module
     address public circuitBreaker;
-
-    /// @dev Vault category
     bytes32 public category;
-
-    // ========== Roles ==========
 
     bytes32 public constant OPERATOR_ROLE = keccak256("OPERATOR_ROLE");
     bytes32 public constant COMPLIANCE_ROLE = keccak256("COMPLIANCE_ROLE");
 
-    // ========== Modifiers ==========
-
-    modifier onlyOperator() {
-        require(hasRole(OPERATOR_ROLE, msg.sender), "SyncVault: Caller is not operator");
-        _;
+    /// @custom:oz-upgrades-unsafe-allow constructor
+    constructor() {
+        _disableInitializers();
     }
 
-    modifier onlyCompliance() {
-        require(hasRole(COMPLIANCE_ROLE, msg.sender), "SyncVault: Caller is not compliance");
-        _;
-    }
-
-    // ========== Constructor ==========
-
-    constructor(
-        IERC20 asset_,
+    function initialize(
+        address asset_,
         string memory name_,
         string memory symbol_,
         address admin
-    ) ERC4626(asset_) ERC20(name_, symbol_) {
-        require(admin != address(0), "SyncVault: Admin cannot be zero");
+    ) public initializer {
+        __ERC4626_init(IERC20(asset_));
+        __ERC20_init(name_, symbol_);
+        __AccessControl_init();
+        __ReentrancyGuard_init();
 
-        // Grant roles
         _grantRole(DEFAULT_ADMIN_ROLE, admin);
+        _grantRole(DEFAULT_ADMIN_ROLE, _msgSender()); // Grant to Factory for configuration
         _grantRole(OPERATOR_ROLE, admin);
         _grantRole(COMPLIANCE_ROLE, admin);
 
-        // Inflation attack prevention: mint 1 dead share to address(1) (burn address)
+        // Inflation protection
         _mint(address(1), 1);
     }
 
-    // ========== Override ERC4626 Functions ==========
+    // === Overrides ===
 
-    /**
-     * @dev Deposit with compliance check
-     */
-    function deposit(uint256 assets, address receiver)
-        public
-        override
-        nonReentrant
-        returns (uint256 shares)
-    {
+    function asset() public view override(ERC4626Upgradeable, ISyncVault) returns (address) {
+        return super.asset();
+    }
+
+    function totalAssets() public view override(ERC4626Upgradeable, ISyncVault) returns (uint256) {
+        return IERC20(asset()).balanceOf(address(this));
+    }
+
+    function convertToAssets(uint256 shares) public view override(ERC4626Upgradeable, ISyncVault) returns (uint256) {
+        return super.convertToAssets(shares);
+    }
+
+    function convertToShares(uint256 assets) public view override(ERC4626Upgradeable, ISyncVault) returns (uint256) {
+        return super.convertToShares(assets);
+    }
+
+    function maxDeposit(address receiver) public view override(ERC4626Upgradeable, ISyncVault) returns (uint256) {
+        return super.maxDeposit(receiver);
+    }
+
+    function maxMint(address receiver) public view override(ERC4626Upgradeable, ISyncVault) returns (uint256) {
+        return super.maxMint(receiver);
+    }
+
+    function maxWithdraw(address owner) public view override(ERC4626Upgradeable, ISyncVault) returns (uint256) {
+        return super.maxWithdraw(owner);
+    }
+
+    function maxRedeem(address owner) public view override(ERC4626Upgradeable, ISyncVault) returns (uint256) {
+        return super.maxRedeem(owner);
+    }
+
+    function deposit(uint256 assets, address receiver) public override(ERC4626Upgradeable, ISyncVault) nonReentrant returns (uint256) {
         _checkCompliance(msg.sender);
         return super.deposit(assets, receiver);
     }
 
-    /**
-     * @dev Mint with compliance check
-     */
-    function mint(uint256 shares, address receiver)
-        public
-        override
-        nonReentrant
-        returns (uint256 assets)
-    {
+    function mint(uint256 shares, address receiver) public override(ERC4626Upgradeable, ISyncVault) nonReentrant returns (uint256) {
         _checkCompliance(msg.sender);
         return super.mint(shares, receiver);
     }
 
-    /**
-     * @dev Withdraw with compliance check
-     */
-    function withdraw(uint256 assets, address receiver, address owner)
-        public
-        override
-        nonReentrant
-        returns (uint256 shares)
-    {
+    function withdraw(uint256 assets, address receiver, address owner) public override(ERC4626Upgradeable, ISyncVault) nonReentrant returns (uint256) {
         _checkCompliance(owner);
         return super.withdraw(assets, receiver, owner);
     }
 
-    /**
-     * @dev Redeem with compliance check
-     */
-    function redeem(uint256 shares, address receiver, address owner)
-        public
-        override
-        nonReentrant
-        returns (uint256 assets)
-    {
+    function redeem(uint256 shares, address receiver, address owner) public override(ERC4626Upgradeable, ISyncVault) nonReentrant returns (uint256) {
         _checkCompliance(owner);
         return super.redeem(shares, receiver, owner);
     }
 
-    /**
-     * @dev Override totalAssets to include internal accounting
-     */
-    function totalAssets() public view override returns (uint256) {
-        return ERC20(asset()).balanceOf(address(this));
-    }
-
-    // ========== Yield Distribution ==========
-
-    /**
-     * @dev Distribute yield to vault (increases share price)
-     */
-    function distributeYield(uint256 amount) external onlyOperator {
+    function distributeYield(uint256 amount) external override onlyRole(OPERATOR_ROLE) {
         require(amount > 0, "SyncVault: Amount must be positive");
         IERC20(asset()).safeTransferFrom(msg.sender, address(this), amount);
     }
 
-    // ========== Compliance Integration ==========
+    // === Identity & Compliance ===
 
     function _checkCompliance(address account) internal view {
-        if (identityRegistry == address(0)) {
-            return;
-        }
-        bool verified = IIdentityRegistry(identityRegistry).isVerified(account);
-        require(verified, "SyncVault: Account not verified");
+        if (identityRegistry == address(0)) return;
+        require(IIdentityRegistry(identityRegistry).isVerified(account), "SyncVault: Account not verified");
     }
 
-    function setIdentityRegistry(address registry) external onlyRole(DEFAULT_ADMIN_ROLE) {
-        require(registry != address(0), "SyncVault: Invalid registry");
+    function setIdentityRegistry(address registry) external override onlyRole(DEFAULT_ADMIN_ROLE) {
         identityRegistry = registry;
     }
 
-    function setComplianceModule(address compliance) external onlyRole(DEFAULT_ADMIN_ROLE) {
-        require(compliance != address(0), "SyncVault: Invalid compliance");
+    function setComplianceModule(address compliance) external override onlyRole(DEFAULT_ADMIN_ROLE) {
         complianceModule = compliance;
     }
 
-    function setCircuitBreaker(address cb) external onlyRole(DEFAULT_ADMIN_ROLE) {
+    function setCircuitBreaker(address cb) external override onlyRole(DEFAULT_ADMIN_ROLE) {
         circuitBreaker = cb;
     }
 
-    function setCategory(bytes32 category_) external {
+    function setCategory(bytes32 category_) external override {
         category = category_;
     }
 
-    // ========== Emergency Functions ==========
-
-    function emergencyWithdraw(uint256 amount, address to) external onlyRole(DEFAULT_ADMIN_ROLE) {
-        require(to != address(0), "SyncVault: Invalid address");
-        IERC20(asset()).safeTransfer(to, amount);
-    }
-
-    // ========== Version ==========
-
-    function version() external pure virtual returns (string memory) {
+    function version() external pure override returns (string memory) {
         return AssetConfig.VERSION;
     }
+
+    // Boilerplate for ISyncVault
+    function totalMinted() external view override returns (uint256) { return totalSupply(); }
+    function totalBurned() external pure override returns (uint256) { return 0; }
 }

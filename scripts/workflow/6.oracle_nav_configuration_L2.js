@@ -1,4 +1,4 @@
-const { getDeploymentInfo, saveDeploymentInfo } = require("./helpers");
+const { getDeploymentInfo, saveWorkflowResult } = require("./helpers");
 const hre = require("hardhat");
 
 /**
@@ -29,6 +29,14 @@ async function main() {
     await approveTx.wait();
 
     console.log("✅ NAV configured successfully.");
+
+    await saveWorkflowResult(6, {
+        name: "Oracle / NAV Config",
+        txHash: receipt.hash || tx.hash,
+        contract: deployment.contracts.azureToken,
+        details: `NAV: $1,200/share, Source: RICS Appraisal`,
+        layer: "L2"
+    });
 }
 
-main().catch(console.error);
+main().then(() => process.exit(0)).catch(err => { console.error(err); process.exit(1); });

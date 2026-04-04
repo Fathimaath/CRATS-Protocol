@@ -167,6 +167,16 @@ async function main() {
   await grantReporterTx.wait();
   console.log("   REPORTER_ROLE granted to:", config.regulator);
 
+  // Grant IDENTITY_MANAGER_ROLE to IdentityRegistry on IdentitySBT
+  console.log("\nGranting IDENTITY_MANAGER_ROLE to IdentityRegistry...");
+  const IDENTITY_MANAGER_ROLE = hre.ethers.id("IDENTITY_MANAGER_ROLE");
+  const grantIdentityManagerTx = await identitySBT.grantRole(
+    IDENTITY_MANAGER_ROLE,
+    deployedContracts.identityRegistry
+  );
+  await grantIdentityManagerTx.wait();
+  console.log("   IDENTITY_MANAGER_ROLE granted to:", deployedContracts.identityRegistry);
+
   // Configure default jurisdictions
   console.log("\nConfiguring default jurisdictions...");
   const jurisdictions = [

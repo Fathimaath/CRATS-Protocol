@@ -1,4 +1,4 @@
-const { getDeploymentInfo, saveDeploymentInfo } = require("./helpers");
+const { getDeploymentInfo, saveDeploymentInfo, saveWorkflowResult } = require("./helpers");
 const hre = require("hardhat");
 
 /**
@@ -17,7 +17,7 @@ async function main() {
     const orderBook = await hre.ethers.getContractAt("OrderBookEngine", deployment.contracts.orderBookEngine);
     
     // Order Parameters
-    const baseToken = deployment.contracts.azureToken;
+    const baseToken = deployment.contracts.azureVault;
     const quoteToken = "0x0000000000000000000000000000000000000000"; // Simulation: Native ETH or mock stable
     const amount = hre.ethers.parseEther("100");
     const price = hre.ethers.parseUnits("1.05", 18); // Asking for $1.05
@@ -50,6 +50,14 @@ async function main() {
     // Save to deployment info
     deployment.contracts.lastOrderId = orderId;
     await saveDeploymentInfo(deployment);
+
+    await saveWorkflowResult(13, {
+        name: "Secondary Market Order",
+        txHash: receipt.hash || tx.hash,
+        contract: deployment.contracts.orderBookEngine,
+        details: `Buy Order for 100 vAZURE @ $1.05`,
+        layer: "L4"
+    });
 }
 
-main().catch(console.error);
+main().then(() => process.exit(0)).catch(err => { console.error(err); process.exit(1); });

@@ -1,4 +1,4 @@
-const { getDeploymentInfo } = require("./helpers");
+const { getDeploymentInfo, saveWorkflowResult } = require("./helpers");
 const hre = require("hardhat");
 
 /**
@@ -31,7 +31,7 @@ async function main() {
         tradeId,
         buyer.address,
         investor.address,
-        deployment.contracts.azureToken,
+        deployment.contracts.azureVault,
         "0x0000000000000000000000000000000000000000",
         fillAmount,
         hre.ethers.parseUnits("1.05", 18)
@@ -40,6 +40,14 @@ async function main() {
 
     console.log("✅ Trade cleared and settled.");
     console.log("Secondary market lifecycle complete!");
+
+    await saveWorkflowResult(14, {
+        name: "Clearing & Settlement",
+        txHash: clearTx.hash || fillTx.hash,
+        contract: deployment.contracts.clearingHouse,
+        details: `Matched trade settled: Buyer Account 3, Seller Investor`,
+        layer: "L4"
+    });
 }
 
-main().catch(console.error);
+main().then(() => process.exit(0)).catch(err => { console.error(err); process.exit(1); });

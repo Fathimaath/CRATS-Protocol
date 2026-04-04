@@ -1,4 +1,4 @@
-const { getDeploymentInfo } = require("./helpers");
+const { getDeploymentInfo, saveWorkflowResult } = require("./helpers");
 const hre = require("hardhat");
 
 /**
@@ -28,6 +28,14 @@ async function main() {
     console.log(" - DID:", identity.did);
 
     console.log("✅ IdentitySBT confirmed for issuer.");
+
+    await saveWorkflowResult(3, {
+        name: "SBT Minting",
+        txHash: "View-only (Minted in Step 1)",
+        contract: deployment.contracts.identitySBT,
+        details: `Token ID: ${tokenId.toString()}, DID: ${identity.did}`,
+        layer: "L1"
+    });
 }
 
-main().catch(console.error);
+main().then(() => process.exit(0)).catch(err => { console.error(err); process.exit(1); });

@@ -1,252 +1,50 @@
-# CRATS Protocol - Multi-Layer RWA Tokenization Platform
+# CRATS Nexus: Institutional RWA Protocol
 
-**CRATS** (Compliant Real World Asset Tokenization System) is a comprehensive 4-layer architecture for regulated RWA tokenization on Ethereum.
+**The Enterprise Gateway to the Real-World Asset Economy.**
 
-## 🏗️ Architecture Overview
+CRATS Nexus is a high-fidelity institutional protocol designed to tokenize, manage, and provide liquidity for Real-World Assets (RWAs). Built on a 4-layer architecture, it enables seamless transformation of properties, private equity, and credit into institutional-grade digital tokens.
 
-```
-┌─────────────────────────────────────────────────────────────────┐
-│ LAYER 4: MARKETPLACE / LIQUIDITY                                │
-│ +-- AMMPool, OrderBook, Settlement                              │
-└─────────────────────────────────────────────────────────────────┘
-                              ↓
-┌─────────────────────────────────────────────────────────────────┐
-│ LAYER 3: FINANCIAL ABSTRACTION (ERC-4626 + ERC-7540)           │
-│ +-- SyncVault (ERC-4626)  - Atomic deposit/redeem              │
-│ +-- AsyncVault (ERC-7540) - Request/claim pattern (T+1, T+2)   │
-│ +-- VaultFactory          - Vault deployment                   │
-│ +-- YieldDistributor      - Rental/dividend/interest           │
-│ +-- RedemptionManager     - Queue processing, gates            │
-└─────────────────────────────────────────────────────────────────┘
-                              ↓
-┌─────────────────────────────────────────────────────────────────┐
-│ LAYER 2: TOKENIZATION (ERC-20F)                                 │
-│ +-- AssetToken   - Force transfer (ERC-7518)                   │
-│ +-- AssetOracle  - Multi-sig NAV, Chainlink PoR                │
-│ +-- AssetRegistry - Documents, Proof of Reserve                │
-│ +-- CircuitBreaker - Trading halts, price limits               │
-│ +-- Plugins: RealEstate, FineArt, CarbonCredit                 │
-└─────────────────────────────────────────────────────────────────┘
-                              ↓
-┌─────────────────────────────────────────────────────────────────┐
-│ LAYER 1: IDENTITY & COMPLIANCE                                  │
-│ +-- IdentitySBT          - Soulbound identity (ERC-721)        │
-│ +-- IdentityRegistry     - Wallet-to-identity mapping           │
-│ +-- KYCProvidersRegistry - Approved KYC providers               │
-│ +-- ComplianceModule     - Jurisdiction, limits, caps          │
-│ +-- TravelRuleModule     - FATF Recommendation 16              │
-│ +-- InvestorRightsRegistry - Investor entitlements             │
-└─────────────────────────────────────────────────────────────────┘
-                              ↓
-┌─────────────────────────────────────────────────────────────────┐
-│ LAYER 0: LEGAL / SPV                                            │
-│ +-- Legal Structure, Custody, Off-chain Assets                 │
-└─────────────────────────────────────────────────────────────────┘
-```
+---
 
-## 📋 Standards Compliance
+## 🏛️ The Protocol Architecture
 
-| Layer | Standard | Purpose | Status |
-|-------|----------|---------|--------|
-| L1 | ERC-721 | Soulbound Identity | ✅ Implemented |
-| L2 | ERC-20F | Force Transfer Token | ✅ Implemented |
-| L2 | ERC-7518 | Tokenized Securities | ✅ Implemented |
-| L3 | ERC-4626 | Tokenized Vault | ✅ Implemented |
-| L3 | ERC-7540 | Async Vault Extension | ✅ Implemented |
+CRATS Nexus operates across four modular layers to ensured compliance, security, and financial utility:
 
-## 🚀 Quick Start
+*   **Layer 1: Identity & Compliance**: Multi-jurisdictional KYC/AML registry utilizing non-transferable Soulbound Tokens (SBTs) to gate-keep participation.
+*   **Layer 2: Asset Tokenization**: Atomic issuance of ERC-3643 compatible tokens with force-transfer, circuit-breaker, and document-registry capabilities.
+*   **Layer 3: Financial Abstraction**: ERC-4626 Tokenized Vaults (SyncVaults) that decouple asset ownership from investment liquidity.
+*   **Layer 4: Marketplace & Secondary**: High-throughput settlement engines for primary market issuance and peer-to-peer secondary trading.
 
-### Installation
+---
 
-```bash
-npm install
-```
+## 🎭 The Story: A High-Fidelity Demo Journey
 
-### Compile Contracts
+This demo mimics a real-world SaaS experience for two primary personas:
 
-```bash
-npm run compile
-```
+### 1. The Institutional Issuer (Asset Manager)
+*   **Step 1: Onboarding**: Connect your institutional wallet and undergo "Nexus Verification" to receive your Identity SBT.
+*   **Step 2: Tokenization**: Use the **Token Studio** to deploy a compliant RWA token (e.g., *Azure Manor*). The protocol atomically mints the entire supply to the treasury.
+*   **Step 3: Market Listing**: Deploy a **SyncVault** specifically for that asset to open it up for institutional investment.
 
-### Run Tests
+### 2. The Institutional Investor
+*   **Step 1: Discover**: Browse the **Nexus Marketplace** for yield-bearing RWA vaults verified by the protocol.
+*   **Step 2: Invest**: One-click investment flow that deposits stablecoins, transfers asset tokens from treasury to vault, and mints yield-bearing shares to the investor.
 
-```bash
-npm test
-REPORT_GAS=true npm test
-npm run test:coverage
-```
+---
 
-### Deploy Layer 1 (Identity & Compliance)
+## 🛠️ Tech Stack & Deployment
 
-```bash
-# Local Hardhat
-npm run deploy:local
+*   **Network**: Sepolia Testnet (Ethereum).
+*   **Frontend**: React + Vite + Tailwind CSS + Framer Motion (Stripe-inspired UI).
+*   **Smart Contracts**: Solidity v0.8.25 (UUPS Upgradable, OpenZeppelin).
+*   **Provider**: Ethers.js v6 with automated demo-signing authority.
 
-# Sepolia Testnet
-npm run deploy:sepolia
+---
 
-# Mainnet
-npm run deploy:mainnet
-```
+## 🚦 Getting Started
 
-### Deploy Layer 2 (Asset Tokenization)
+1.  **Clone & Install**: `npm install`
+2.  **Infrastructure**: `npx hardhat compile`
+3.  **Launch Dashboard**: `npm run dev`
 
-```bash
-# Local
-npm run deploy:layer2:local
-
-# Configure Layer 1 addresses first:
-export IDENTITY_REGISTRY_ADDRESS=0x...
-export COMPLIANCE_MODULE_ADDRESS=0x...
-export TRAVEL_RULE_MODULE_ADDRESS=0x...
-```
-
-### Deploy Layer 3 (Financial Vaults)
-
-```bash
-# Local
-npm run deploy:layer3:local
-```
-
-## 📁 Project Structure
-
-```
-contracts/
-├── identity/           # Layer 1 - Identity & KYC
-│   ├── IdentitySBT.sol
-│   ├── IdentityRegistry.sol
-│   ├── KYCProvidersRegistry.sol
-│   └── InvestorRightsRegistry.sol
-├── compliance/         # Layer 1 - Compliance Engine
-│   ├── ComplianceModule.sol
-│   ├── TravelRuleModule.sol
-│   └── CircuitBreakerModule.sol
-├── asset/             # Layer 2 - Asset Tokenization
-│   ├── AssetToken.sol
-│   ├── AssetFactory.sol
-│   ├── AssetOracle.sol
-│   ├── AssetRegistry.sol
-│   └── plugins/       # RealEstate, FineArt, CarbonCredit
-├── vault/             # Layer 3 - Financial Vaults
-│   ├── SyncVault.sol      # ERC-4626
-│   └── AsyncVault.sol     # ERC-7540
-├── market/            # Layer 3/4 - Market Infrastructure
-│   ├── YieldDistributor.sol
-│   ├── RedemptionManager.sol
-│   ├── AMMPool.sol
-│   └── OrderBook.sol
-├── financial/         # Layer 3 - Factory & Registry
-│   └── VaultFactory.sol
-└── interfaces/        # Contract Interfaces
-    ├── identity/
-    ├── compliance/
-    ├── asset/
-    ├── standards/     # ERC-4626, ERC-7540
-    └── financial/
-```
-
-## 🔧 Key Features
-
-### Layer 1 - Identity & Compliance
-
-- ✅ **Soulbound Identity (SBT)** - Non-transferable ERC-721 for investor identity
-- ✅ **Multi-Chain Wallet Support** - Link multiple wallets across chains (up to 20)
-- ✅ **Investor Roles** - None, Investor, Qualified, Institutional, Issuer
-- ✅ **Jurisdiction Controls** - Allow/block by ISO 3166-1 country codes
-- ✅ **Holding/Transfer Limits** - By investor role
-- ✅ **Travel Rule Compliance** - FATF Recommendation 16 (hashed PII for GDPR)
-- ✅ **Risk Scoring** - 0-100 risk score for transactions
-
-### Layer 2 - Asset Tokenization
-
-- ✅ **ERC-20F Tokens** - Force transfer for regulatory recovery
-- ✅ **Asset Factory** - Clone-based deployment (gas efficient)
-- ✅ **Multi-Sig Oracle** - NAV updates require 2+ approvals
-- ✅ **Chainlink PoR** - Proof of Reserve integration
-- ✅ **Circuit Breakers** - Price limits, trading halts
-- ✅ **Plugin System** - Category-specific logic (Real Estate, Art, Carbon)
-
-### Layer 3 - Financial Vaults
-
-- ✅ **ERC-4626 Sync Vaults** - Atomic deposit/redeem (T+0)
-- ✅ **ERC-7540 Async Vaults** - Request/claim pattern (T+1, T+2, T+7)
-- ✅ **Yield Distribution** - Rental income, dividends, interest
-- ✅ **Redemption Queues** - FIFO processing, pro-rata distribution
-- ✅ **Redemption Gates** - Limit % redeemable per period
-- ✅ **Vault Factory** - Template-based deployment
-
-## 🛡️ Security & Audits
-
-### Reference Implementations
-
-| Contract | Reference | Audit Status |
-|----------|-----------|--------------|
-| ERC-4626 (SyncVault) | OpenZeppelin | ✅ Audited 2022-10 |
-| ERC-7540 (AsyncVault) | ERC4626 Alliance | ✅ Production-grade |
-| ERC-7540 (AsyncVault) | Centrifuge Protocol | ✅ $500M+ AUM |
-
-### Audit Status
-
-| Layer | Status | Priority |
-|-------|--------|----------|
-| Layer 1 | ⚠️ Development | 🔴 Critical |
-| Layer 2 | ⚠️ Development | 🔴 Critical |
-| Layer 3 | ⚠️ Development | 🟡 High |
-
-**Note:** For production deployment, professional audits are REQUIRED for Layer 1 and Layer 2 (critical compliance logic). Layer 3 uses audited reference implementations.
-
-## 📊 Use Cases
-
-### Real Estate Tokenization
-
-1. Create AssetToken via AssetFactory (REAL_ESTATE category)
-2. Deploy AsyncVault (ERC-7540) for the property
-3. Investors requestDeposit() (T+1 settlement)
-4. Rental income distributed via YieldDistributor
-5. Investors redeem with 30-day notice period
-
-### Treasury Bill Vault
-
-1. Create AssetToken for T-Bills
-2. Deploy SyncVault (ERC-4626) for instant liquidity
-3. Daily yield accrual via Chainlink PoR
-4. Instant deposit/redeem
-
-### Fine Art Fractionalization
-
-1. Create AssetToken via FineArtPlugin
-2. Deploy AsyncVault with T+7 settlement
-3. Royalty distribution via YieldDistributor
-4. Scheduled redemption windows (quarterly)
-
-## 🌐 Network Support
-
-| Network | Chain ID | Status |
-|---------|----------|--------|
-| Hardhat Local | 31337 | ✅ Ready |
-| Ethereum Sepolia | 11155111 | ⚠️ Configure .env |
-| Ethereum Mainnet | 1 | ⚠️ Configure .env |
-| Polygon | 137 | 🔜 Coming Soon |
-| Arbitrum | 42161 | 🔜 Coming Soon |
-
-## 📖 Documentation
-
-- [Layer 1: Identity & Compliance](./docs/layer1-identity.md)
-- [Layer 2: Asset Tokenization](./docs/layer2-assets.md)
-- [Layer 3: Financial Vaults](./docs/layer3-vaults.md)
-- [API Reference](./docs/api-reference.md)
-
-## 🤝 Contributing
-
-Contributions are welcome! Please read our contributing guidelines before submitting PRs.
-
-## 📄 License
-
-MIT License - see [LICENSE](LICENSE) file for details.
-
-## 🙏 Acknowledgments
-
-- OpenZeppelin Contracts (ERC-4626 implementation)
-- ERC4626 Alliance (ERC-7540 reference)
-- Centrifuge Protocol (RWA vault patterns)
-- Ethereum Foundation (ERC standards)
+*Verified. Compliant. Liquid. Welcome to the Nexus Protocol.*

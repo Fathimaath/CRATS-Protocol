@@ -1,4 +1,4 @@
-const { getDeploymentInfo } = require("./helpers");
+const { getDeploymentInfo, saveWorkflowResult } = require("./helpers");
 const hre = require("hardhat");
 
 /**
@@ -34,6 +34,14 @@ async function main() {
 
     const shares = await azureVault.balanceOf(investor.address);
     console.log("✅ Investor Shares:", hre.ethers.formatEther(shares), "vAZURE");
+
+    await saveWorkflowResult(11, {
+        name: "Investment (Primary)",
+        txHash: depositTx.hash || transferTx.hash,
+        contract: deployment.contracts.azureVault,
+        details: `Investor deposited 10k AZURE for vAZURE shares`,
+        layer: "L3"
+    });
 }
 
-main().catch(console.error);
+main().then(() => process.exit(0)).catch(err => { console.error(err); process.exit(1); });

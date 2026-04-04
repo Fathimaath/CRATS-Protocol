@@ -1,4 +1,4 @@
-const { getDeploymentInfo } = require("./helpers");
+const { getDeploymentInfo, saveWorkflowResult } = require("./helpers");
 const hre = require("hardhat");
 
 /**
@@ -10,9 +10,18 @@ async function main() {
     const deployment = await getDeploymentInfo();
     const [deployer, issuer] = await hre.ethers.getSigners();
     
+    console.log("Admin (KYC Provider):", deployer.address);
     console.log("Issuer Wallet:", issuer.address);
 
     const identityRegistry = await hre.ethers.getContractAt("IdentityRegistry", deployment.contracts.identityRegistry);
+    const identitySBT = await hre.ethers.getContractAt("IdentitySBT", deployment.contracts.identitySBT);
+    
+    // Check if already registered
+    const existingTokenId = await identitySBT.tokenIdOf(issuer.address);
+    if (existingTokenId != 0) {
+        console.log(`ℹ️ Issuer already registered with Token ID: ${existingTokenId}. Skipping.`);
+        return;
+    }
     
     const roleIssuer = 4;
     const jurisdiction = 826;
@@ -21,7 +30,7 @@ async function main() {
     const expiresAt = Math.floor(Date.now() / 1000) + (365 * 24 * 60 * 60);
 
     console.log("Registering identity for issuer...");
-    const tx = await identityRegistry.registerIdentity(
+    const tx = await identityRegistry.connect(deployer).registerIdentity(
         issuer.address,
         roleIssuer,
         jurisdiction,
@@ -29,9 +38,16 @@ async function main() {
         did,
         expiresAt
     );
-    await tx.wait();
-    
+    const receipt = await tx.wait();
     console.log("✅ Issuer identity registered successfully.");
+
+    await saveWorkflowResult(1, {
+        name: "Issuer Onboarding",
+        txHash: receipt.hash || tx.hash,
+        contract: deployment.contracts.identityRegistry,
+        details: `Issuer: ${issuer.address}`,
+        layer: "L1"
+    });
 }
 
-main().catch(console.error);
+main().then(() => process.exit(0)).catch(err => { console.error(err); process.exit(1); });

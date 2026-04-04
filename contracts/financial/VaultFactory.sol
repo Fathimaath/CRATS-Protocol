@@ -177,8 +177,10 @@ contract VaultFactory is AccessControl, ReentrancyGuard {
 
         // Initialize vault
         if (params.vaultType == VaultType.SYNC) {
-            // Initialize SyncVault - set category (creator already has OPERATOR_ROLE from template)
+            // Initialize SyncVault - set asset, name, symbol and admin
+            ISyncVault(vault).initialize(params.asset, params.name, params.symbol, msg.sender);
             ISyncVault(vault).setCategory(params.category);
+            ISyncVault(vault).setIdentityRegistry(identityRegistry);
         } else {
             // Initialize AsyncVault - set category and settlement period
             IAsyncVault(vault).setCategory(params.category);

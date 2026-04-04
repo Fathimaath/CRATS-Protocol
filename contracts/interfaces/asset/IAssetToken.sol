@@ -87,4 +87,9 @@ interface IAssetToken is IERC20 {
     function setComplianceModule(address newModule) external;
     function setIdentityRegistry(address newRegistry) external;
     function setCircuitBreaker(address newCircuitBreaker) external;
+
+    // === Document & Oracle Management ===
+
+    function addDocuments(bytes32[] calldata docHashes, string[] calldata docUris) external;
+    function setNAV(uint256 newNAV) external;
 }
