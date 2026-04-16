@@ -6,7 +6,7 @@ import { Button, Card } from '../components/UI';
 import { createVaultForAsset, executeTokenizationFlow } from '../blockchain/ethereum';
 
 export const AssetList: React.FC = () => {
-  const { assets, listAsset, addAsset, verificationStatus } = useWorkflow();
+  const { assets, listAsset, addAsset, verificationStatus, isSyncing } = useWorkflow();
   const [listingId, setListingId] = useState<string | null>(null);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [isIssuing, setIsIssuing] = useState(false);
@@ -20,15 +20,17 @@ export const AssetList: React.FC = () => {
     category: 'REAL_ESTATE'
   });
 
-  const handleList = async (id: string, address?: string) => {
-    if (!address) {
-      alert("Asset address not found. Please re-tokenize or check blockchain.");
+  const handleList = async (id: string, address?: string, name?: string) => {
+    if (!address || !name) {
+      alert("Asset details incomplete. Please re-tokenize or check blockchain.");
       return;
     }
     setListingId(id);
     try {
-      const vaultAddress = await createVaultForAsset(address);
+      // Use asset name and symbol (id) for vault creation
+      const vaultAddress = await createVaultForAsset(address, name, id);
       listAsset(id, vaultAddress);
+      alert(`${name} Vault deployed and listed successfully!`);
     } catch (err: any) {
       console.error(err);
       alert("Listing Failed: " + (err.message || "Blockchain error"));
@@ -40,7 +42,7 @@ export const AssetList: React.FC = () => {
   const handleIssue = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsIssuing(true);
-    setIssueStatus('Deploying AssetToken on Sepolia...');
+    setIssueStatus('Initiating Institutional Asset Minting...');
     try {
       const { assetAddress, txHash } = await executeTokenizationFlow(
         formData.name,
@@ -49,21 +51,11 @@ export const AssetList: React.FC = () => {
         formData.nav
       );
 
-      const newAsset = {
-        id: formData.symbol,
-        name: formData.name,
-        category: formData.category,
-        supply: formData.supply,
-        nav: `$${parseFloat(formData.nav).toLocaleString()}`,
-        price: '$1.00',
-        image: 'https://images.unsplash.com/photo-1560518883-ce09059eeffa?q=80&w=600&auto=format&fit=crop',
-        address: assetAddress,
-        txHash: txHash
-      };
-
-      addAsset(newAsset);
-      setIssueStatus('Success! Asset Ready.');
-      setTimeout(() => setShowCreateModal(false), 2000);
+      setIssueStatus('Success! Asset Minted to Treasury.');
+      setTimeout(() => {
+        setShowCreateModal(false);
+        setIssueStatus('');
+      }, 2000);
     } catch (err: any) {
       console.error(err);
       setIssueStatus('Error: ' + (err.message || 'Issuance failed'));
@@ -76,12 +68,19 @@ export const AssetList: React.FC = () => {
     <div className="space-y-8 animate-in fade-in duration-500">
       <div className="flex items-center justify-between">
         <div className="flex flex-col gap-1">
-          <h1 className="text-3xl font-bold text-slate-900 leading-tight tracking-tight">Institutional Assets</h1>
-          <p className="text-slate-500">Manage and distribute your RWA token inventory.</p>
+          <h1 className="text-3xl font-bold text-slate-900 leading-tight tracking-tight">Institutional Asset Inventory</h1>
+          <p className="text-slate-500">Assets held by the protocol treasury and ready for marketplace listing.</p>
         </div>
-        <Button onClick={() => setShowCreateModal(true)} className="flex items-center gap-2 shadow-xl shadow-indigo-100 logo-glow py-4 px-6 rounded-2xl">
-           <Plus size={20} /> Create New Asset
-        </Button>
+        <div className="flex items-center gap-4">
+           {isSyncing && (
+             <div className="flex items-center gap-2 px-4 py-2 bg-indigo-50 text-indigo-600 rounded-2xl text-[10px] font-bold animate-pulse ring-1 ring-indigo-100">
+                <Loader2 size={14} className="animate-spin" /> Syncing Treasury...
+             </div>
+           )}
+           <Button onClick={() => setShowCreateModal(true)} className="flex items-center gap-2 shadow-xl shadow-indigo-100 logo-glow py-4 px-6 rounded-2xl">
+              <Plus size={20} /> Tokenize New Asset
+           </Button>
+        </div>
       </div>
 
       {!verificationStatus && (
@@ -90,10 +89,10 @@ export const AssetList: React.FC = () => {
               <ShieldCheck size={24} className="text-amber-600" />
               <div>
                  <div className="font-bold">Identity Verification Pending</div>
-                 <div className="text-xs opacity-80">You can issue assets, but marketplace listing requires a verified Institutional SBT.</div>
+                 <div className="text-xs opacity-80">Treasury operations and listing require a verified Institutional SBT.</div>
               </div>
            </div>
-           <Button variant="outline" className="border-amber-200 text-amber-700 hover:bg-amber-100 py-2 px-4 rounded-xl text-xs font-bold uppercase tracking-widest">Complete KYC</Button>
+           <Button variant="outline" className="border-amber-200 text-amber-700 hover:bg-amber-100 py-2 px-4 rounded-xl text-xs font-bold uppercase tracking-widest">Verify Treasury</Button>
         </Card>
       )}
 
@@ -101,8 +100,8 @@ export const AssetList: React.FC = () => {
         {assets.length === 0 ? (
           <div className="col-span-full py-20 flex flex-col items-center justify-center bg-slate-50 rounded-3xl border-2 border-dashed border-slate-200">
             <Building2 className="text-slate-300 mb-4" size={48} />
-            <p className="text-slate-500 font-bold">No assets tokenized yet.</p>
-            <p className="text-slate-400 text-sm mt-1">Click "Create New Asset" to begin issuance.</p>
+            <p className="text-slate-500 font-bold">No assets in treasury inventory.</p>
+            <p className="text-slate-400 text-sm mt-1">Start by tokenizing a new real-world asset.</p>
           </div>
         ) : (
           assets.map((asset) => (
@@ -115,7 +114,7 @@ export const AssetList: React.FC = () => {
                 <div className="h-48 overflow-hidden relative">
                   <img src={asset.image} alt={asset.name} className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110" />
                   <div className="absolute top-4 right-4 px-3 py-1 bg-white/90 backdrop-blur-md rounded-full text-[10px] font-black uppercase tracking-widest text-slate-700 shadow-sm">
-                    {asset.category}
+                    {asset.category?.replace('_', ' ')}
                   </div>
                 </div>
                 
@@ -125,7 +124,7 @@ export const AssetList: React.FC = () => {
                     <div className="flex items-center gap-2 mt-1.5">
                        <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest bg-slate-50 px-2 py-0.5 rounded border border-slate-100">{asset.id}</span>
                        <span className="w-1 h-1 rounded-full bg-slate-300"></span>
-                       <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Supply: {asset.supply}</span>
+                       <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Treasury: {(asset as any).balance || asset.supply}</span>
                     </div>
                   </div>
 
@@ -135,59 +134,36 @@ export const AssetList: React.FC = () => {
                       <div className="text-lg font-black text-slate-800 tracking-tight">{asset.nav}</div>
                     </div>
                     <div>
-                      <div className="text-[10px] uppercase font-black text-slate-400 tracking-widest mb-1">Status</div>
-                      <div className={`text-sm font-black uppercase tracking-widest ${asset.isListed ? 'text-emerald-600' : 'text-amber-500'}`}>
-                         {asset.isListed ? 'Marketplace Live' : 'In Treasury'}
+                      <div className="text-[10px] uppercase font-black text-slate-400 tracking-widest mb-1">Asset Address</div>
+                      <div className="flex items-center gap-1 font-mono text-[10px] text-slate-400">
+                        {asset.address?.slice(0, 6)}...{asset.address?.slice(-4)}
                       </div>
                     </div>
                   </div>
 
                   <div className="pt-2">
-                    {asset.isListed ? (
-                      <div className="flex items-center justify-between bg-emerald-50 p-4 rounded-2xl border border-emerald-100">
-                         <div className="flex items-center gap-2 text-emerald-600 font-black text-[10px] uppercase tracking-widest">
-                            <ShieldCheck size={16} /> Listed on Nexus
-                         </div>
-                         <button className="p-2 text-slate-400 hover:text-indigo-600 transition-colors">
-                            <Share2 size={18} />
-                         </button>
-                      </div>
-                    ) : (
-                      <Button 
-                        onClick={() => handleList(asset.id, asset.address)} 
-                        className="w-full h-14 flex items-center justify-center gap-2 font-black text-sm uppercase tracking-widest shadow-xl shadow-indigo-50"
-                        disabled={listingId === asset.id || !verificationStatus}
-                      >
-                        {listingId === asset.id ? (
-                          <><Loader2 className="animate-spin" size={18} /> Deploying Vault...</>
-                        ) : (
-                          <>{verificationStatus ? <><Plus size={18} /> List to Marketplace</> : <><ShieldCheck size={18} /> Verified Access Only</>}</>
-                        )}
-                      </Button>
-                    )}
+                    <Button 
+                      onClick={() => handleList(asset.id, asset.address, asset.name)} 
+                      className="w-full h-14 flex items-center justify-center gap-2 font-black text-sm uppercase tracking-widest shadow-xl shadow-indigo-50"
+                      disabled={listingId === asset.id || !verificationStatus}
+                    >
+                      {listingId === asset.id ? (
+                        <><Loader2 className="animate-spin" size={18} /> Deploying Vault...</>
+                      ) : (
+                        <>{verificationStatus ? <><Plus size={18} /> List to Marketplace</> : <><ShieldCheck size={18} /> Treasury Verified Only</>}</>
+                      )}
+                    </Button>
                   </div>
                   
-                  <div className="pt-2 space-y-1">
-                    {asset.txHash && (
-                      <a 
-                        href={`https://sepolia.etherscan.io/tx/${asset.txHash}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="flex items-center justify-center gap-1.5 text-[9px] font-black text-slate-400 hover:text-indigo-500 transition-colors uppercase tracking-[0.2em]"
-                      >
-                        <ExternalLink size={10} /> Issuance Explorer
-                      </a>
-                    )}
-                    {asset.vaultAddress && (
-                      <a 
-                        href={`https://sepolia.etherscan.io/address/${asset.vaultAddress}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="flex items-center justify-center gap-1.5 text-[9px] font-black text-indigo-500 hover:text-indigo-600 transition-colors uppercase tracking-[0.2em]"
-                      >
-                        <ExternalLink size={10} /> Vault Explorer
-                      </a>
-                    )}
+                  <div className="pt-2">
+                    <a 
+                      href={`https://sepolia.etherscan.io/address/${asset.address}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex items-center justify-center gap-1.5 text-[9px] font-black text-slate-400 hover:text-indigo-500 transition-colors uppercase tracking-[0.2em]"
+                    >
+                      <ExternalLink size={10} /> View Smart Contract
+                    </a>
                   </div>
                 </div>
               </Card>

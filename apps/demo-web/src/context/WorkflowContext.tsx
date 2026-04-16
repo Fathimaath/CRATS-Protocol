@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
+import { fetchAllVaults, fetchTreasuryInventory } from '../blockchain/ethereum';
 
 export interface Asset {
   id: string;
@@ -12,6 +13,11 @@ export interface Asset {
   txHash?: string;
   isListed?: boolean;
   vaultAddress?: string;
+  // Vault specific data
+  symbol?: string;
+  assetSymbol?: string;
+  myShares?: string;
+  openPosition?: string;
 }
 
 export type View = 'overview' | 'verification' | 'tokenize' | 'assets' | 'marketplace' | 'settings';
@@ -24,10 +30,12 @@ interface WorkflowContextType {
   verificationStatus: boolean;
   setVerificationStatus: (status: boolean) => void;
   assets: Asset[];
+  vaults: Asset[];
   addAsset: (asset: Asset) => void;
   listAsset: (id: string, vaultAddress: string) => void;
   walletAddress: string | null;
   connectWallet: () => void;
+  isSyncing: boolean;
 }
 
 const WorkflowContext = createContext<WorkflowContextType | undefined>(undefined);
@@ -52,6 +60,8 @@ export const WorkflowProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     return localStorage.getItem('crats_wallet');
   });
 
+  const [isSyncing, setIsSyncing] = useState(false);
+
   useEffect(() => {
     if ((window as any).ethereum) {
       const handleAccounts = (accounts: string[]) => {
@@ -67,6 +77,47 @@ export const WorkflowProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       return () => (window as any).ethereum.removeListener('accountsChanged', handleAccounts);
     }
   }, []);
+
+  // Sync Marketplace from Blockchain
+  const [vaults, setVaults] = useState<Asset[]>([]);
+
+  useEffect(() => {
+    const syncMarketplace = async () => {
+      setIsSyncing(true);
+      try {
+        const [onChainVaults, treasuryInventory] = await Promise.all([
+          fetchAllVaults(walletAddress || undefined),
+          fetchTreasuryInventory()
+        ]);
+        
+        setVaults(onChainVaults);
+        
+        setAssets(prev => {
+          // Keep local drafts (non-finalized tokenizations)
+          const drafts = prev.filter(a => !a.address);
+          
+          // Inventory is the source of truth for assets available to be listed
+          const merged: Asset[] = [...treasuryInventory];
+          
+          drafts.forEach(draft => {
+             const alreadyExists = treasuryInventory.some((v: any) => v.id === draft.id);
+             if (!alreadyExists) merged.push(draft);
+          });
+          
+          localStorage.setItem('crats_assets', JSON.stringify(merged));
+          return merged;
+        });
+      } catch (err) {
+        console.error("Failed to sync marketplace:", err);
+      } finally {
+        setIsSyncing(false);
+      }
+    };
+
+    syncMarketplace();
+    const interval = setInterval(syncMarketplace, 15000); 
+    return () => clearInterval(interval);
+  }, [walletAddress]);
 
   const setRole = (newRole: 'issuer' | 'investor' | null) => {
     setRoleState(newRole);
@@ -114,10 +165,12 @@ export const WorkflowProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       verificationStatus, 
       setVerificationStatus,
       assets,
+      vaults,
       addAsset,
       listAsset,
       walletAddress,
-      connectWallet
+      connectWallet,
+      isSyncing
     }}>
       {children}
     </WorkflowContext.Provider>

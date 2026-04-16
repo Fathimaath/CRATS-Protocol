@@ -6,7 +6,7 @@ import { executeTokenizationFlow } from '../blockchain/ethereum';
 import { motion } from 'framer-motion';
 
 export const TokenStudio: React.FC = () => {
-  const { addAsset } = useWorkflow();
+  const { addAsset, assets } = useWorkflow();
   const [loading, setLoading] = useState(false);
   const [status, setStatus] = useState('');
   const [showSuccess, setShowSuccess] = useState(false);
@@ -68,10 +68,16 @@ export const TokenStudio: React.FC = () => {
         <div className="w-24 h-24 bg-emerald-100 text-emerald-600 rounded-[2.5rem] flex items-center justify-center mb-8 shadow-2xl shadow-emerald-100">
           <CheckCircle size={48} />
         </div>
-        <h2 className="text-4xl font-black text-slate-900 mb-4 tracking-tighter">Asset Tokenized!</h2>
-        <p className="text-slate-500 mb-10 max-w-md text-lg leading-relaxed">
-          {formData.name} has been successfully deployed. The initial supply has been minted to the protocol treasury for distribution.
+        <p className="text-slate-500 mb-6 max-w-md text-lg leading-relaxed">
+          {formData.name} has been successfully deployed. The initial supply has been minted to the protocol treasury.
         </p>
+        
+        <div className="bg-slate-50 p-6 rounded-[2rem] border border-slate-100 mb-8 w-full max-w-md text-left">
+           <div className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 mb-2">Institutional Asset Address</div>
+           <div className="text-xs font-mono font-bold text-indigo-600 break-all select-all cursor-copy" title="Click to copy">
+              {assets.find(a => a.id === formData.symbol)?.address}
+           </div>
+        </div>
         
         {lastTxHash && (
            <a 

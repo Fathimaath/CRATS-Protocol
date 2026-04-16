@@ -35,6 +35,25 @@ This document outlines the high-level contiguous workflow for the Nexus Protocol
 
 ---
 
+## 🚀 The Tri-Stage Investment Lifecycle
+**Goal**: Atomic institutional settlement for retail investors.
+
+The Nexus Protocol uses a mediated settlement model to bridge the gap between retail capital (USDC/USDT) and institutional RWA assets.
+
+1.  **Stage 1: Public Capital Transfer** (Wallet Connection Required)
+    *   **Action**: The investor transfers the required USDT from their connected wallet (MetaMask/Phantom) to the Institutional Treasury.
+    *   **Logic**: `ERC20.transfer(treasuryAddress, amount)`.
+    
+2.  **Stage 2: Institutional Conversion** (Treasury Mediation)
+    *   **Action**: The Treasury verifies the incoming payment and performs the "conversion" by approving the required RWA `AssetTokens` for the target Vault.
+    *   **Logic**: `AssetToken.approve(vaultAddress, amount)`.
+
+3.  **Stage 3: Vault Share Minting** (Atomic Settlement)
+    *   **Action**: The Treasury deposits the assets into the Vault, which atomically mints yield-bearing shares directly to the **Investor's Connected Wallet**.
+    *   **Logic**: `SyncVault.deposit(amount, investorAddress)`.
+
+---
+
 ## 🛡️ Risk & Safety Modules
 *   **Circuit Breaker**: Halts trading in case of regulatory updates or oracle failure.
 *   **Force Transfer**: Enables regulators to re-appropriate funds in case of lost keys or court orders.

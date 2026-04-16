@@ -102,7 +102,7 @@ contract IdentitySBT is
         require(_walletToTokenId[primaryWallet] == 0, "IdentitySBT: wallet already has identity");
 
         uint256 tokenId = ++_tokenIdCounter;
-        _safeMint(primaryWallet, tokenId);
+        _mint(primaryWallet, tokenId);
 
         IdentityData storage id = _identities[tokenId];
         id.didHash = didHash;
