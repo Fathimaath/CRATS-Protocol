@@ -27,7 +27,7 @@ contract RealEstatePlugin is IAssetPlugin {
         require(bytes(params.name).length > 0, "RealEstate: Name required");
         require(bytes(params.symbol).length > 0, "RealEstate: Symbol required");
         require(params.initialSupply > 0, "RealEstate: Supply required");
-        require(keccak256(abi.encodePacked(params.categoryId)) == CATEGORY_ID, "RealEstate: Invalid category");
+        require(params.categoryId == CATEGORY_ID, "RealEstate: Invalid category");
         return true;
     }
 

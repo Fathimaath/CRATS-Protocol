@@ -1,4 +1,3 @@
-import React from 'react';
 import { Sidebar } from '../components/Sidebar';
 import { useWorkflow } from '../context/WorkflowContext';
 import { Overview } from '../views/Overview';
@@ -6,6 +5,7 @@ import { Verification } from '../views/Verification';
 import { TokenStudio } from '../views/TokenStudio';
 import { AssetList } from '../views/AssetList';
 import { Marketplace } from '../views/Marketplace';
+import { Transparency } from '../views/Transparency';
 import { Card, Button } from '../components/UI';
 import { Wallet, Shield, Zap } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -20,6 +20,7 @@ export const DashboardLayout = () => {
       case 'tokenize': return <TokenStudio />;
       case 'assets': return <AssetList />;
       case 'marketplace': return <Marketplace />;
+      case 'transparency': return <Transparency />;
       default: return <Overview />;
     }
   };

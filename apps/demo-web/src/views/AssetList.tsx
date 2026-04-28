@@ -27,8 +27,12 @@ export const AssetList: React.FC = () => {
     }
     setListingId(id);
     try {
+      // Find asset to get its category
+      const asset = assets.find(a => a.id === id);
+      const category = asset?.category || 'REAL_ESTATE';
+
       // Use asset name and symbol (id) for vault creation
-      const vaultAddress = await createVaultForAsset(address, name, id);
+      const vaultAddress = await createVaultForAsset(address, name, id, category);
       listAsset(id, vaultAddress);
       alert(`${name} Vault deployed and listed successfully!`);
     } catch (err: any) {
@@ -48,7 +52,8 @@ export const AssetList: React.FC = () => {
         formData.name,
         formData.symbol,
         formData.supply,
-        formData.nav
+        formData.nav,
+        formData.category
       );
 
       setIssueStatus('Success! Asset Minted to Treasury.');
@@ -265,7 +270,7 @@ export const AssetList: React.FC = () => {
                        >
                           <option value="REAL_ESTATE">Institutional Real Estate Framework</option>
                           <option value="FINE_ART">Blue-chip Fine Art Protection</option>
-                          <option value="CARBON">Global Carbon Credit Standard</option>
+                          <option value="CARBON_CREDIT">Global Carbon Credit Standard</option>
                        </select>
                     </div>
 

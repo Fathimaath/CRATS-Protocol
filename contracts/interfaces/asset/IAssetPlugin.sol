@@ -10,7 +10,7 @@ interface IAssetPlugin {
         string name;
         string symbol;
         uint256 initialSupply;
-        string categoryId;
+        bytes32 categoryId;
     }
 
     struct AssetDocument {

@@ -24,7 +24,7 @@ contract CarbonCreditPlugin is IAssetPlugin {
         AssetParams calldata params
     ) external pure override returns (bool) {
         require(params.initialSupply > 0, "CarbonCredit: Supply required");
-        require(keccak256(abi.encodePacked(params.categoryId)) == CATEGORY_ID, "CarbonCredit: Invalid category");
+        require(params.categoryId == CATEGORY_ID, "CarbonCredit: Invalid category");
         return true;
     }
 

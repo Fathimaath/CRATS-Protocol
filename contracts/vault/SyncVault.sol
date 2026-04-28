@@ -11,6 +11,7 @@ import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "../interfaces/identity/IIdentityRegistry.sol";
 import "../interfaces/vault/ISyncVault.sol";
 import "../utils/AssetConfig.sol";
+import "./BaseVault.sol";
 
 /**
  * @title SyncVault
@@ -22,7 +23,8 @@ contract SyncVault is
     ERC4626Upgradeable, 
     AccessControlUpgradeable, 
     ReentrancyGuardUpgradeable,
-    ISyncVault 
+    ISyncVault,
+    BaseVault
 {
     using SafeERC20 for IERC20;
 
@@ -35,6 +37,10 @@ contract SyncVault is
     bytes32 public constant OPERATOR_ROLE = keccak256("OPERATOR_ROLE");
     bytes32 public constant COMPLIANCE_ROLE = keccak256("COMPLIANCE_ROLE");
 
+    // === Holder Tracking ===
+    address[] private _holderList;
+    mapping(address => bool) private _isHolder;
+
     /// @custom:oz-upgrades-unsafe-allow constructor
     constructor() {
         _disableInitializers();
@@ -44,12 +50,14 @@ contract SyncVault is
         address asset_,
         string memory name_,
         string memory symbol_,
-        address admin
+        address admin,
+        address assetRegistry_
     ) public initializer {
         __ERC4626_init(IERC20(asset_));
         __ERC20_init(name_, symbol_);
         __AccessControl_init();
         __ReentrancyGuard_init();
+        __BaseVault_init(asset_, assetRegistry_);
 
         _grantRole(DEFAULT_ADMIN_ROLE, admin);
         _grantRole(DEFAULT_ADMIN_ROLE, _msgSender()); // Grant to Factory for configuration
@@ -60,13 +68,17 @@ contract SyncVault is
         _mint(address(1), 1);
     }
 
+    function decimals() public view override(ERC20Upgradeable, ERC4626Upgradeable) returns (uint8) {
+        return super.decimals();
+    }
+
     // === Overrides ===
 
     function asset() public view override(ERC4626Upgradeable, ISyncVault) returns (address) {
         return super.asset();
     }
 
-    function totalAssets() public view override(ERC4626Upgradeable, ISyncVault) returns (uint256) {
+    function totalAssets() public view override(ERC4626Upgradeable, ISyncVault, BaseVault) returns (uint256) {
         return IERC20(asset()).balanceOf(address(this));
     }
 
@@ -117,6 +129,7 @@ contract SyncVault is
     function distributeYield(uint256 amount) external override onlyRole(OPERATOR_ROLE) {
         require(amount > 0, "SyncVault: Amount must be positive");
         IERC20(asset()).safeTransferFrom(msg.sender, address(this), amount);
+        _afterYieldDistribution();
     }
 
     // === Identity & Compliance ===
@@ -149,4 +162,53 @@ contract SyncVault is
     // Boilerplate for ISyncVault
     function totalMinted() external view override returns (uint256) { return totalSupply(); }
     function totalBurned() external pure override returns (uint256) { return 0; }
+
+    // === BaseVault Implementation ===
+
+    function _update(
+        address from,
+        address to,
+        uint256 value
+    ) internal override(ERC20Upgradeable, BaseVault) {
+        // Track unique holders
+        if (to != address(0) && !_isHolder[to]) {
+            _holderList.push(to);
+            _isHolder[to] = true;
+        }
+        
+        // Note: we don't remove from list for gas efficiency, 
+        // _getHolderCount filters by balanceOf.
+        if (from != address(0) && balanceOf(from) == 0) {
+            _isHolder[from] = false;
+        }
+
+        super._update(from, to, value);
+    }
+
+    function _getHolderCount() internal view override returns (uint256) {
+        uint256 count;
+        uint256 len = _holderList.length;
+        for (uint256 i = 0; i < len; i++) {
+            if (_isHolder[_holderList[i]]) count++;
+        }
+        return count;
+    }
+
+    function _getAllHolders() internal view override
+        returns (address[] memory holders, uint256[] memory shares)
+    {
+        uint256 count = _getHolderCount();
+        holders = new address[](count);
+        shares = new uint256[](count);
+        uint256 idx;
+        uint256 len = _holderList.length;
+        for (uint256 i = 0; i < len; i++) {
+            address h = _holderList[i];
+            if (_isHolder[h]) {
+                holders[idx] = h;
+                shares[idx] = balanceOf(h);
+                idx++;
+            }
+        }
+    }
 }

@@ -14,6 +14,9 @@ interface IAssetRegistry {
     event PORSubmitted(uint256 timestamp, uint256 assetValue);
     event PORVerified(uint256 indexed porId, address verifier);
     event AssetEventLogged(string eventType, bytes32 indexed dataHash, uint256 timestamp);
+    event BeneficialOwnerUpdated(address indexed assetToken, address indexed vault, address indexed investor, uint256 shares, uint256 aptClaim, uint256 bpsOwnership, uint256 timestamp);
+    event BeneficialOwnerRemoved(address indexed assetToken, address indexed vault, address indexed investor, uint256 timestamp);
+    event VaultRegistered(address indexed assetToken, address indexed vault, uint256 timestamp);
 
     // === Structs ===
 
@@ -40,6 +43,24 @@ interface IAssetRegistry {
         bytes32 dataHash;
         uint256 timestamp;
         address initiator;
+    }
+
+    struct BeneficialOwner {
+        address investor;
+        uint256 vaultShares;
+        uint256 aptClaim;
+        uint256 bpsOwnership;
+        uint256 lastUpdated;
+        bool isActive;
+    }
+
+    struct VaultSummary {
+        address vault;
+        uint256 totalShares;
+        uint256 totalAssets;
+        uint256 sharePrice;
+        uint256 ownerCount;
+        uint256 lastSynced;
     }
 
     // === View Functions ===
@@ -81,4 +102,17 @@ interface IAssetRegistry {
 
     function addOperator(address operator) external;
     function removeOperator(address operator) external;
+
+    // === Beneficial Ownership Registry (BOR) ===
+
+    function registerVault(address assetToken, address vault) external;
+    function syncOwner(address assetToken, address investor, uint256 newShares) external;
+    function syncOwnerBatch(address assetToken, address[] calldata investors, uint256[] calldata newShares) external;
+    
+    function getBeneficialOwner(address assetToken, address vault, address investor) external view returns (BeneficialOwner memory);
+    function getVaultOwners(address assetToken, address vault) external view returns (BeneficialOwner[] memory);
+    function getAllOwners(address assetToken) external view returns (BeneficialOwner[] memory);
+    function getTotalClaim(address assetToken, address investor) external view returns (uint256 totalAptClaim, uint256 totalBps);
+    function getVaultSummary(address assetToken, address vault) external view returns (VaultSummary memory);
+    function validateInvariant(address assetToken, address vault) external view returns (bool isValid, uint256 delta);
 }

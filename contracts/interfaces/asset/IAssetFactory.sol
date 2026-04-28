@@ -66,6 +66,7 @@ interface IAssetFactory {
     function circuitBreakerModule() external view returns (address);
     function identityRegistry() external view returns (address);
     function complianceModule() external view returns (address);
+    function assetRegistry() external view returns (address);
 
     // === Asset Creation ===
 
@@ -97,4 +98,12 @@ interface IAssetFactory {
     function setCircuitBreakerModule(address circuitBreaker) external;
     function setIdentityRegistry(address identityRegistry) external;
     function setComplianceModule(address complianceModule) external;
+
+    // === Vault Integration ===
+
+    function onVaultDeployed(
+        address assetToken,
+        address vault,
+        uint8 vaultType
+    ) external;
 }

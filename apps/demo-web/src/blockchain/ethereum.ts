@@ -3,6 +3,7 @@ import {
   IDENTITY_REGISTRY_ADDR, 
   ASSET_FACTORY_ADDR,
   VAULT_FACTORY_ADDR,
+  ASSET_REGISTRY_ADDR,
   SEPOLIA_RPC,
   USDT_ADDR,
 } from '../constants';
@@ -14,10 +15,15 @@ const ASSET_IMAGES: Record<string, string[]> = {
     'https://images.unsplash.com/photo-1600585154340-be6161a56a0c?q=80&w=800&auto=format&fit=crop',
     'https://images.unsplash.com/photo-1600607687920-4e2a09cf159d?q=80&w=800&auto=format&fit=crop'
   ],
-  'ART': [
+  'FINE_ART': [
     'https://images.unsplash.com/photo-1579783902614-a3fb3927b6a5?q=80&w=800&auto=format&fit=crop',
     'https://images.unsplash.com/photo-1549490349-8643362247b5?q=80&w=800&auto=format&fit=crop',
     'https://images.unsplash.com/photo-1576775104585-70335006ccf3?q=80&w=800&auto=format&fit=crop'
+  ],
+  'CARBON_CREDIT': [
+    'https://images.unsplash.com/photo-1500382017468-9049fed747ef?q=80&w=800&auto=format&fit=crop',
+    'https://images.unsplash.com/photo-1441974231531-c6227db76b6e?q=80&w=800&auto=format&fit=crop',
+    'https://images.unsplash.com/photo-1473081556163-2a1713ff9724?q=80&w=800&auto=format&fit=crop'
   ],
   'PRIVATE_EQUITY': [
     'https://images.unsplash.com/photo-1551836022-d5d8b5c7190b?q=80&w=800&auto=format&fit=crop',
@@ -119,7 +125,8 @@ export const ensureAddressVerified = async (targetAddress: string, role: number 
     if (existingTokenId > 0n) {
       if (onStatusUpdate) onStatusUpdate(`Updating Compliance Status for ${name}...`);
       console.log(`[Compliance] ${name} has token ${existingTokenId}, updating status to VERIFIED...`);
-      const tx = await registry.updateStatus(targetAddress, 2, { gasLimit: 500000 });
+      const registryManager = new ethers.Contract(IDENTITY_REGISTRY_ADDR, ["function updateStatus(address wallet, uint8 newStatus) external"], wallet);
+      const tx = await registryManager.updateStatus(targetAddress, 2, { gasLimit: 500000 });
       await tx.wait();
     } else {
       if (onStatusUpdate) onStatusUpdate(`Registering ${name} in Compliance Registry...`);
@@ -180,24 +187,63 @@ export const onboardUser = async (userAddress: string, countryCode: number = 826
   const expiresAt = Math.floor(Date.now() / 1000) + (2 * 365 * 24 * 60 * 60); // 2 years
 
   // 1. Check if Treasury itself is verified. If not, verify it first.
-  const isTreasuryVerified = await registry.isVerified(wallet.address);
+  const treasuryAddress = wallet.address;
+  const isTreasuryVerified = await registry.isVerified(treasuryAddress);
+  console.log(`[Onboarding] Treasury: ${treasuryAddress} | Verified: ${isTreasuryVerified}`);
+  
   if (!isTreasuryVerified) {
-    console.log("Onboarding Treasury...");
-    const treasuryDid = `did:crats:sepolia:${wallet.address.toLowerCase()}`;
-    const treasuryDidHash = ethers.id(treasuryDid);
-    const txT = await registry.registerIdentity(
-      wallet.address, 
-      2, // Role 2 for Provider/Admin
-      countryCode, 
-      treasuryDidHash, 
-      treasuryDid, 
-      expiresAt,
-      { gasLimit: 1000000 }
-    );
-    await txT.wait();
+    // Safety check: Does it have an identity already?
+    const sbtAddr = await registry.identitySBT();
+    const sbt = new ethers.Contract(sbtAddr, ["function tokenIdOf(address) view returns (uint256)"], wallet);
+    const treasuryTokenId = await sbt.tokenIdOf(treasuryAddress);
+    
+    if (treasuryTokenId > 0n) {
+      console.log(`[Onboarding] Treasury has identity ${treasuryTokenId} but is not verified. Updating status...`);
+      const registryManager = new ethers.Contract(IDENTITY_REGISTRY_ADDR, [
+        "function updateStatus(address wallet, uint8 newStatus) external"
+      ], wallet);
+      const txS = await registryManager.updateStatus(treasuryAddress, 2, { gasLimit: 500000 });
+      await txS.wait();
+    } else {
+      console.log("Onboarding Treasury...");
+      const treasuryDid = `did:crats:sepolia:${treasuryAddress.toLowerCase()}`;
+      const treasuryDidHash = ethers.id(treasuryDid);
+      const txT = await registry.registerIdentity(
+        treasuryAddress, 
+        2, // Role 2 for Provider/Admin
+        countryCode, 
+        treasuryDidHash, 
+        treasuryDid, 
+        expiresAt,
+        { gasLimit: 1000000 }
+      );
+      await txT.wait();
+    }
   }
 
   // 2. Onboard the requested user
+  const isUserVerified = await registry.isVerified(userAddress);
+  if (isUserVerified) {
+    console.log(`[Onboarding] User ${userAddress} is already verified.`);
+    return "0x0000000000000000000000000000000000000000000000000000000000000000";
+  }
+
+  // Final Safety Check: Does user have an identity already?
+  const sbtAddr = await registry.identitySBT();
+  const sbt = new ethers.Contract(sbtAddr, ["function tokenIdOf(address) view returns (uint256)"], wallet);
+  const userTokenId = await sbt.tokenIdOf(userAddress);
+
+  if (userTokenId > 0n) {
+    console.log(`[Onboarding] User has identity ${userTokenId} but is not verified. Updating status...`);
+    const registryManager = new ethers.Contract(IDENTITY_REGISTRY_ADDR, [
+      "function updateStatus(address wallet, uint8 newStatus) external"
+    ], wallet);
+    const txU = await registryManager.updateStatus(userAddress, 2, { gasLimit: 500000 });
+    await txU.wait();
+    return txU.hash;
+  }
+
+  console.log(`[Onboarding] Registering User: ${userAddress}`);
   const tx = await registry.registerIdentity(
     userAddress, 
     roleId, 
@@ -217,8 +263,9 @@ export const executeStep1 = onboardUser;
 export const executeStep3 = async () => ""; // No-op for backward compatibility
 
 // Layer 2: Asset Tokenization (Unified)
-export const executeTokenizationFlow = async (name: string, symbol: string, supply: string, nav: string) => {
+export const executeTokenizationFlow = async (name: string, symbol: string, supply: string, nav: string, category: string = "REAL_ESTATE") => {
   const wallet = getWallet();
+  const categoryId = ethers.id(category.toUpperCase().replace(/\s+/g, '_'));
   
   // Ensure Treasury is verified before deployment (required for initial mint)
   await ensureTreasuryVerified();
@@ -227,13 +274,24 @@ export const executeTokenizationFlow = async (name: string, symbol: string, supp
     ASSET_FACTORY_ADDR,
     [
       "function deployAsset(string name, string symbol, uint256 initialSupply, bytes32 category) public returns (address)",
+      "function isIssuerApproved(address issuer) external view returns (bool)",
+      "function approveIssuer(address issuer) external",
       "event AssetDeployed(address indexed token, address indexed issuer, bytes32 category)"
     ],
     wallet
   );
 
+  // 0. Auto-Approve Treasury as Issuer if needed
+  const isApproved = await factory.isIssuerApproved(wallet.address).catch(() => false);
+  if (!isApproved) {
+    console.log(`[Tokenization] Approving Treasury ${wallet.address} as Issuer...`);
+    const approveTx = await factory.approveIssuer(wallet.address, { gasLimit: 100000 });
+    await approveTx.wait();
+    console.log("[Tokenization] Treasury approved.");
+  }
+
   // 1. Deploy Asset
-  const tx = await factory.deployAsset(name, symbol, ethers.parseUnits(supply, 18), ethers.id("REAL_ESTATE"), { gasLimit: 3000000 });
+  const tx = await factory.deployAsset(name, symbol, ethers.parseUnits(supply, 18), categoryId, { gasLimit: 3000000 });
   const receipt = await tx.wait();
   
   if (!receipt) throw new Error("Transaction failed: No receipt");
@@ -267,8 +325,10 @@ export const executeTokenizationFlow = async (name: string, symbol: string, supp
 };
 
 // Layer 3: Vault Listing
-export const createVaultForAsset = async (assetAddress: string, name: string, symbol: string) => {
+export const createVaultForAsset = async (assetAddress: string, name: string, symbol: string, category: string = "REAL_ESTATE") => {
   const wallet = getWallet();
+  const categoryId = ethers.id(category.toUpperCase().replace(/\s+/g, '_'));
+  
   const factory = new ethers.Contract(
     VAULT_FACTORY_ADDR,
     [
@@ -285,7 +345,7 @@ export const createVaultForAsset = async (assetAddress: string, name: string, sy
     assetAddress, 
     vaultName, 
     vaultSymbol, 
-    ethers.id("REAL_ESTATE"), 
+    categoryId, 
     { gasLimit: 3000000 }
   );
   
@@ -357,15 +417,15 @@ export const fetchAllVaults = async (userAddress?: string) => {
         name: info.name,
         symbol: info.symbol,
         assetSymbol: assetSymbol,
-        category: "Real Estate",
         supply: ethers.formatUnits(totalSupply, 18),
         myShares: ethers.formatUnits(userBalance, 18),
         openPosition: (balanceNum * navNum).toFixed(2),
         nav: navNum.toFixed(2),
         price: "1.00",
-        image: getRandomImage("REAL_ESTATE", addr),
+        image: getRandomImage(info.category, addr),
         address: info.asset,
         vaultAddress: addr,
+        category: info.category,
         isListed: true
       });
     } catch (err) {
@@ -427,12 +487,12 @@ export const fetchTreasuryInventory = async () => {
          inventory.push({
            id: symbol,
            name: name,
-           category: "REAL_ESTATE",
+           category: info.category,
            supply: ethers.formatUnits(supply, 18),
            balance: ethers.formatUnits(balance, 18),
            nav: `$${parseFloat(ethers.formatUnits(nav, 18)).toLocaleString()}`,
            price: "$1.00",
-           image: getRandomImage("REAL_ESTATE", symbol),
+           image: getRandomImage(info.category, symbol),
            address: addr,
            isListed: false
          });
@@ -550,4 +610,99 @@ export const investInVault = async (
   await txDeposit.wait();
   
   return txDeposit.hash;
+};
+
+/**
+ * Fetch Global Registry Metrics (Layer 2 & 3 transparency)
+ */
+export const fetchRegistryStats = async () => {
+  try {
+    const provider = getProvider();
+    const registry = new ethers.Contract(
+      ASSET_REGISTRY_ADDR,
+      [
+        "function documentCount() external view returns (uint256)",
+        "function porCount() external view returns (uint256)",
+        "function eventCount() external view returns (uint256)"
+      ],
+      provider
+    );
+
+    const [docs, pors, events] = await Promise.all([
+      registry.documentCount().catch(() => 0n),
+      registry.porCount().catch(() => 0n),
+      registry.eventCount().catch(() => 0n)
+    ]);
+
+    return {
+      documents: Number(docs),
+      pors: Number(pors),
+      events: Number(events)
+    };
+  } catch (error) {
+    console.error("[Registry Stats] Missing or invalid AssetRegistry address:", ASSET_REGISTRY_ADDR);
+    return { documents: 0, pors: 0, events: 0 };
+  }
+};
+
+/**
+ * Fetch Beneficial Owners for a specific asset/vault combination
+ */
+export const fetchBeneficialOwners = async (assetAddress: string, vaultAddress: string) => {
+  try {
+    const provider = getProvider();
+    const registry = new ethers.Contract(
+      ASSET_REGISTRY_ADDR,
+      [
+        "function getVaultOwners(address assetToken, address vault) external view returns (tuple(address investor, uint256 vaultShares, uint256 aptClaim, uint256 bpsOwnership, uint256 lastUpdated, bool isActive)[])"
+      ],
+      provider
+    );
+
+    const owners = await registry.getVaultOwners(assetAddress, vaultAddress).catch(() => []);
+    if (!owners || owners.length === 0) return [];
+
+    return owners.map((o: any) => ({
+      investor: o.investor,
+      shares: ethers.formatUnits(o.vaultShares, 18),
+      claim: ethers.formatUnits(o.aptClaim, 18),
+      bps: Number(o.bpsOwnership),
+      updated: new Date(Number(o.lastUpdated) * 1000).toLocaleString(),
+      active: o.isActive
+    }));
+  } catch (error) {
+    console.error("[Beneficial Owners] Failed to fetch:", error);
+    return [];
+  }
+};
+/**
+ * Trigger a manual BOR sync for an investor (useful for balances held before the BOR update)
+ * Performed by sending a 0-value transfer to self.
+ */
+export const syncOwnership = async (vaultAddress: string) => {
+  const signer = await getMetaMaskSigner();
+  const vault = new ethers.Contract(
+    vaultAddress,
+    ["function transfer(address to, uint256 value) public returns (bool)"],
+    signer
+  );
+  
+  const userAddress = await signer.getAddress();
+  const tx = await vault.transfer(userAddress, 0);
+  await tx.wait();
+  return tx.hash;
+};
+
+/**
+ * Check a user's share balance in a specific vault
+ */
+export const checkVaultBalance = async (vaultAddress: string, userAddress: string) => {
+  const provider = getProvider();
+  const vault = new ethers.Contract(
+    vaultAddress,
+    ["function balanceOf(address) view returns (uint256)"],
+    provider
+  );
+  const balance = await vault.balanceOf(userAddress);
+  return ethers.formatUnits(balance, 18);
 };

@@ -8,6 +8,7 @@ import "@openzeppelin/contracts/proxy/Clones.sol";
 import "../utils/AssetConfig.sol";
 import "../interfaces/vault/ISyncVault.sol";
 import "../interfaces/vault/IAsyncVault.sol";
+import "../interfaces/asset/IAssetFactory.sol";
 
 /**
  * @title VaultFactory
@@ -49,6 +50,7 @@ contract VaultFactory is AccessControl, ReentrancyGuard {
     address public circuitBreakerModule;
     address public yieldDistributor;
     address public redemptionManager;
+    address public assetFactory;
 
     /// @dev Category plugins
     mapping(bytes32 => address) public categoryPlugins;
@@ -175,16 +177,42 @@ contract VaultFactory is AccessControl, ReentrancyGuard {
         // Deploy clone
         vault = template.clone();
 
+        // Retrieve AssetRegistry from AssetFactory
+        address registry = address(0);
+        if (assetFactory != address(0)) {
+            registry = IAssetFactory(assetFactory).assetRegistry();
+        }
+
         // Initialize vault
         if (params.vaultType == VaultType.SYNC) {
-            // Initialize SyncVault - set asset, name, symbol and admin
-            ISyncVault(vault).initialize(params.asset, params.name, params.symbol, msg.sender);
+            ISyncVault(vault).initialize(
+                params.asset, 
+                params.name, 
+                params.symbol, 
+                msg.sender,
+                registry
+            );
             ISyncVault(vault).setCategory(params.category);
             ISyncVault(vault).setIdentityRegistry(identityRegistry);
         } else {
-            // Initialize AsyncVault - set category and settlement period
+            IAsyncVault(vault).initialize(
+                params.asset,
+                params.name,
+                params.symbol,
+                msg.sender,
+                registry
+            );
             IAsyncVault(vault).setCategory(params.category);
             IAsyncVault(vault).setSettlementPeriod(params.redeemSettlement);
+        }
+
+        // Register vault in AssetRegistry via AssetFactory
+        if (assetFactory != address(0)) {
+            IAssetFactory(assetFactory).onVaultDeployed(
+                params.asset,
+                vault,
+                uint8(params.vaultType)
+            );
         }
 
         // Register vault
@@ -308,6 +336,15 @@ contract VaultFactory is AccessControl, ReentrancyGuard {
         require(rm != address(0), "VaultFactory: Invalid redemption manager");
         redemptionManager = rm;
         emit Layer1Configured("RedemptionManager", rm);
+    }
+
+    /**
+     * @dev Set Asset Factory
+     */
+    function setAssetFactory(address factory) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        require(factory != address(0), "VaultFactory: Invalid asset factory");
+        assetFactory = factory;
+        emit Layer1Configured("AssetFactory", factory);
     }
 
     // ========== View Functions ==========

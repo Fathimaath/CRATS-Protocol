@@ -103,9 +103,13 @@ async function main() {
   console.log("🎉 LAYER 4 DEPLOYMENT COMPLETE!");
 }
 
-main()
-  .then(() => process.exit(0))
-  .catch((error) => {
-    console.error(error);
-    process.exit(1);
-  });
+if (require.main === module) {
+  main()
+    .then(() => process.exit(0))
+    .catch((error) => {
+      console.error(error);
+      process.exit(1);
+    });
+}
+
+module.exports = { main };

@@ -28,22 +28,26 @@ async function main() {
   try {
     // 1. Layer 1
     console.log(">>> [1/4] DEPLOYING LAYER 1 (IDENTITY)...");
-    await hre.run("run", { script: "scripts/deploy-layer1.js", network: hre.network.name });
+    const deployLayer1 = require("./deploy-layer1.js");
+    await deployLayer1.main();
     console.log("--- Layer 1 Completed ---\n");
 
     // 2. Layer 2
     console.log(">>> [2/4] DEPLOYING LAYER 2 (TOKENIZATION)...");
-    await hre.run("run", { script: "scripts/deploy-layer2.js", network: hre.network.name });
+    const deployLayer2 = require("./deploy-layer2.js");
+    await deployLayer2.main();
     console.log("--- Layer 2 Completed ---\n");
 
     // 3. Layer 3
     console.log(">>> [3/4] DEPLOYING LAYER 3 (FINANCIAL)...");
-    await hre.run("run", { script: "scripts/deploy-layer3.js", network: hre.network.name });
+    const deployLayer3 = require("./deploy-layer3.js");
+    await deployLayer3.main();
     console.log("--- Layer 3 Completed ---\n");
 
     // 4. Layer 4
     console.log(">>> [4/4] DEPLOYING LAYER 4 (MARKETPLACE)...");
-    await hre.run("run", { script: "scripts/deploy-layer4.js", network: hre.network.name });
+    const deployLayer4 = require("./deploy-layer4.js");
+    await deployLayer4.main();
     console.log("--- Layer 4 Completed ---\n");
 
     const endTime = Date.now();

@@ -2,8 +2,6 @@ const hre = require("hardhat");
 const fs = require("fs");
 const path = require("path");
 
-const sleep = (ms) => new Promise(r => setTimeout(r, ms));
-
 async function main() {
   console.log("========================================");
   console.log("CRATS Protocol Layer 3 Deployment - Financial Abstraction");
@@ -32,29 +30,21 @@ async function main() {
   const syncVaultTemplateAddress = await syncVaultTemplate.getAddress();
   console.log("  ✅ SyncVault Template:", syncVaultTemplateAddress);
   
-  await sleep(15000); 
-
-  // 2. Deploy AsyncVault Template (ERC-7540)
-  // AsyncVault constructor(address asset_, string memory name_, string memory symbol_, address admin)
-  console.log("\n2️⃣  Deploying AsyncVault Template (ERC-7540)...");
+  // 2. Deploy AsyncVault Template
+  console.log("\n2️⃣  Deploying AsyncVault Template...");
   const AsyncVault = await hre.ethers.getContractFactory("AsyncVault");
-  // Use deployer as dummy asset for template
-  const asyncVaultTemplate = await AsyncVault.deploy(deployer.address, "Async Template", "ASYNC-T", deployer.address);
+  const asyncVaultTemplate = await AsyncVault.deploy();
   await asyncVaultTemplate.waitForDeployment();
   const asyncVaultTemplateAddress = await asyncVaultTemplate.getAddress();
   console.log("  ✅ AsyncVault Template:", asyncVaultTemplateAddress);
   
-  await sleep(15000);
-
-  // 3. Deploy VaultFactory (Standard deployment)
+  // 3. Deploy VaultFactory
   console.log("\n3️⃣  Deploying VaultFactory...");
   const VaultFactory = await hre.ethers.getContractFactory("VaultFactory");
   const vaultFactory = await VaultFactory.deploy(deployer.address);
   await vaultFactory.waitForDeployment();
   const vaultFactoryAddress = await vaultFactory.getAddress();
   console.log("  ✅ VaultFactory:", vaultFactoryAddress);
-
-  await sleep(15000);
 
   // 4. Deploy YieldDistributor
   console.log("\n4️⃣  Deploying YieldDistributor...");
@@ -64,29 +54,33 @@ async function main() {
   const yieldDistributorAddress = await yieldDistributor.getAddress();
   console.log("  ✅ YieldDistributor:", yieldDistributorAddress);
 
-  await sleep(15000);
-
   // ========== CONFIGURATION ==========
   console.log("\n🔧 Configuring VaultFactory...");
   
   await vaultFactory.setSyncVaultTemplate(syncVaultTemplateAddress);
-  await sleep(5000);
   await vaultFactory.setAsyncVaultTemplate(asyncVaultTemplateAddress);
-  await sleep(5000);
   
   if (L1.identityRegistry) {
     await vaultFactory.setIdentityRegistry(L1.identityRegistry);
-    await sleep(5000);
   }
   if (L1.complianceModule) {
     await vaultFactory.setComplianceModule(L1.complianceModule);
-    await sleep(5000);
   }
   if (L2.circuitBreaker) {
     await vaultFactory.setCircuitBreakerModule(L2.circuitBreaker);
-    await sleep(5000);
   }
   await vaultFactory.setYieldDistributor(yieldDistributorAddress);
+  
+  if (L2.assetFactory) {
+    console.log("\n🔗 Linking VaultFactory to AssetFactory...");
+    await vaultFactory.setAssetFactory(L2.assetFactory);
+    
+    // Grant VAULT_FACTORY_ROLE to VaultFactory on AssetFactory
+    const AssetFactoryContract = await hre.ethers.getContractAt("AssetFactory", L2.assetFactory);
+    const VAULT_FACTORY_ROLE = hre.ethers.id("VAULT_FACTORY_ROLE");
+    await AssetFactoryContract.grantRole(VAULT_FACTORY_ROLE, vaultFactoryAddress);
+    console.log("  ✅ Link and Role Grant Complete");
+  }
 
   // ========== PERSISTENCE ==========
   let deploymentInfo = JSON.parse(fs.readFileSync(deploymentFile, "utf8"));
@@ -100,9 +94,13 @@ async function main() {
   console.log("🎉 LAYER 3 DEPLOYMENT COMPLETE!");
 }
 
-main()
-  .then(() => process.exit(0))
-  .catch((error) => {
-    console.error(error);
-    process.exit(1);
-  });
+if (require.main === module) {
+  main()
+    .then(() => process.exit(0))
+    .catch((error) => {
+      console.error(error);
+      process.exit(1);
+    });
+}
+
+module.exports = { main };

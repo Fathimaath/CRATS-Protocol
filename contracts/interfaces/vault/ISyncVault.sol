@@ -54,7 +54,13 @@ interface ISyncVault {
 
     function version() external pure returns (string memory);
 
-    function initialize(address asset_, string memory name_, string memory symbol_, address admin) external;
+    function initialize(
+        address asset_,
+        string calldata name_,
+        string calldata symbol_,
+        address admin,
+        address assetRegistry_
+    ) external;
     function distributeYield(uint256 amount) external;
     function totalMinted() external view returns (uint256);
     function totalBurned() external view returns (uint256);

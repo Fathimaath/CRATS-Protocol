@@ -20,7 +20,7 @@ export interface Asset {
   openPosition?: string;
 }
 
-export type View = 'overview' | 'verification' | 'tokenize' | 'assets' | 'marketplace' | 'settings';
+export type View = 'overview' | 'verification' | 'tokenize' | 'assets' | 'marketplace' | 'transparency' | 'settings';
 
 interface WorkflowContextType {
   role: 'issuer' | 'investor' | null;
@@ -86,8 +86,14 @@ export const WorkflowProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       setIsSyncing(true);
       try {
         const [onChainVaults, treasuryInventory] = await Promise.all([
-          fetchAllVaults(walletAddress || undefined),
-          fetchTreasuryInventory()
+          fetchAllVaults(walletAddress || undefined).catch(err => {
+            console.error("Vault Sync Failed:", err);
+            return [];
+          }),
+          fetchTreasuryInventory().catch(err => {
+            console.error("Inventory Sync Failed:", err);
+            return [];
+          })
         ]);
         
         setVaults(onChainVaults);
@@ -108,7 +114,7 @@ export const WorkflowProvider: React.FC<{ children: React.ReactNode }> = ({ chil
           return merged;
         });
       } catch (err) {
-        console.error("Failed to sync marketplace:", err);
+        console.error("Critical sync failure:", err);
       } finally {
         setIsSyncing(false);
       }

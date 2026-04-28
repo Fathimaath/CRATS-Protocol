@@ -15,7 +15,6 @@ import "./BaseVault.sol";
 /**
  * @title AsyncVault
  * @dev ERC-7540 Asynchronous Tokenized Vault.
- * Inherits ERC4626Upgradeable for core accounting and BaseVault for BOR syncing.
  */
 contract AsyncVault is 
     Initializable,
@@ -40,8 +39,6 @@ contract AsyncVault is
     mapping(address => uint256) private _nextRedeemRequestId;
 
     address public identityRegistry;
-    bytes32 public category;
-    uint256 public settlementPeriod;
     bytes32 public constant OPERATOR_ROLE = keccak256("OPERATOR_ROLE");
     bytes32 public constant FULFILLER_ROLE = keccak256("FULFILLER_ROLE");
 
@@ -64,22 +61,22 @@ contract AsyncVault is
         _grantRole(OPERATOR_ROLE, admin);
         _grantRole(FULFILLER_ROLE, admin);
 
-        _mint(address(1), 1); // Minimum supply to prevent inflation attacks (Standard 4626)
+        _mint(address(1), 1);
     }
-
-    // === Overrides (Consolidated for multiple inheritance) ===
 
     function decimals() public view override(ERC20Upgradeable, ERC4626Upgradeable) returns (uint8) {
         return super.decimals();
     }
+
+    // === SyncVault-style Overrides ===
 
     function asset() public view override(ERC4626Upgradeable, IERC7540) returns (address) {
         return super.asset();
     }
 
     function totalAssets() public view override(ERC4626Upgradeable, BaseVault, IERC7540) returns (uint256) {
-        uint256 actualBalance = IERC20(asset()).balanceOf(address(this));
-        return actualBalance > _totalPendingDepositAssets ? actualBalance - _totalPendingDepositAssets : 0;
+        // totalAssets() in 4626 logic
+        return super.totalAssets() - _totalPendingDepositAssets;
     }
 
     function convertToShares(uint256 assets) public view override(ERC4626Upgradeable, IERC7540) returns (uint256) {
@@ -90,7 +87,7 @@ contract AsyncVault is
         return super.convertToAssets(shares);
     }
 
-    // === ERC-7540 Async Logic ===
+    // === Async Request Methods (IERC7540) ===
 
     function requestDeposit(uint256 assets, address controller, address owner) external override nonReentrant returns (uint256 requestId) {
         require(owner == msg.sender || isOperator(owner, msg.sender), "unauthorized");
@@ -98,10 +95,7 @@ contract AsyncVault is
         _pendingDeposit[controller] += assets;
         _totalPendingDepositAssets += assets;
         requestId = _nextDepositRequestId[controller]++;
-        
-        // BOR sync: reflect pending position
         assetRegistry.syncOwner(asset(), controller, balanceOf(controller) + convertToShares(assets));
-        
         emit DepositRequest(controller, owner, requestId, msg.sender, assets);
         return requestId;
     }
@@ -112,10 +106,7 @@ contract AsyncVault is
         _pendingRedeem[controller] += shares;
         _totalPendingRedeemShares += shares;
         requestId = _nextRedeemRequestId[controller]++;
-        
-        // BOR sync: reflect reduction
         assetRegistry.syncOwner(asset(), controller, balanceOf(controller) - shares);
-        
         emit RedeemRequest(controller, owner, requestId, msg.sender, shares);
         return requestId;
     }
@@ -129,20 +120,11 @@ contract AsyncVault is
         _totalPendingDepositAssets -= assets;
     }
 
-    function fulfillRedeem(address controller, uint256 shares) external onlyRole(FULFILLER_ROLE) {
-        uint256 assets = convertToAssets(shares);
-        _claimableRedeem[controller].shares += shares;
-        _claimableRedeem[controller].assets += assets;
-        _pendingRedeem[controller] -= shares;
-        _totalPendingRedeemShares -= shares;
-    }
-
-    // Consolidated overrides for overlapping signatures between 4626 and 7540
+    // === Signature Consolidation ===
 
     function deposit(uint256 assets, address receiver, address controller) public override(IERC7540) nonReentrant returns (uint256 shares) {
         require(controller == msg.sender || isOperator(controller, msg.sender), "unauthorized");
         InternalClaim storage cl = _claimableDeposit[controller];
-        require(cl.assets >= assets, "insufficient claimable assets");
         shares = assets.mulDiv(cl.shares, cl.assets, Math.Rounding.Floor);
         cl.assets -= assets; cl.shares -= shares;
         _transfer(address(this), receiver, shares);
@@ -152,7 +134,6 @@ contract AsyncVault is
     function redeem(uint256 shares, address receiver, address controller) public override(ERC4626Upgradeable, IERC7540) nonReentrant returns (uint256 assets) {
         require(controller == msg.sender || isOperator(controller, msg.sender), "unauthorized");
         InternalClaim storage cl = _claimableRedeem[controller];
-        require(cl.shares >= shares, "insufficient claimable shares");
         assets = shares.mulDiv(cl.assets, cl.shares, Math.Rounding.Floor);
         cl.shares -= shares; cl.assets -= assets;
         _burn(address(this), shares);
@@ -160,46 +141,39 @@ contract AsyncVault is
         emit Withdraw(msg.sender, receiver, controller, assets, shares);
     }
 
-    // === Disable Atomic methods to enforce Async (Mapping to claim if available) ===
-
+    // 4626 atomic compatibility
     function deposit(uint256 assets, address receiver) public override(ERC4626Upgradeable) returns (uint256) {
         return deposit(assets, receiver, msg.sender);
     }
     function mint(uint256 shares, address receiver) public override(ERC4626Upgradeable) returns (uint256) {
-        uint256 assets = convertToAssets(shares);
+        uint256 assets = shares.mulDiv(_claimableDeposit[msg.sender].assets, _claimableDeposit[msg.sender].shares, Math.Rounding.Floor);
         return deposit(assets, receiver, msg.sender);
     }
     function withdraw(uint256 assets, address receiver, address owner) public override(ERC4626Upgradeable) returns (uint256) {
-        uint256 shares = convertToShares(assets);
+        uint256 shares = assets.mulDiv(_claimableRedeem[owner].shares, _claimableRedeem[owner].assets, Math.Rounding.Floor);
         return redeem(shares, receiver, owner);
     }
 
-    // === View Functions (Max/Preview) ===
-
-    function maxDeposit(address) public view override(ERC4626Upgradeable, IERC7540) returns (uint256) { return 0; }
-    function maxMint(address) public view override(ERC4626Upgradeable, IERC7540) returns (uint256) { return 0; }
-    function maxWithdraw(address o) public view override(ERC4626Upgradeable, IERC7540) returns (uint256) { return _claimableRedeem[o].assets; }
-    function maxRedeem(address o) public view override(ERC4626Upgradeable, IERC7540) returns (uint256) { return _claimableRedeem[o].shares; }
-    
-    // We don't call super here to avoid unreachable code warnings
-    function previewDeposit(uint256) public pure override(ERC4626Upgradeable, IERC7540) returns (uint256) { revert("Use requestDeposit"); }
-    function previewMint(uint256) public pure override(ERC4626Upgradeable, IERC7540) returns (uint256) { revert("Use requestDeposit"); }
-    function previewWithdraw(uint256) public pure override(ERC4626Upgradeable, IERC7540) returns (uint256) { revert("Use requestRedeem"); }
-    function previewRedeem(uint256) public pure override(ERC4626Upgradeable, IERC7540) returns (uint256) { revert("Use requestRedeem"); }
-
-    // === BOR & Holder Logic ===
+    // === Holder Tracking & BOR ===
+    address[] private _holderList;
+    mapping(address => bool) private _isHolder;
 
     function _update(address from, address to, uint256 value) internal override(ERC20Upgradeable, BaseVault) {
+        if (to != address(0) && !_isHolder[to]) { _holderList.push(to); _isHolder[to] = true; }
+        if (from != address(0) && balanceOf(from) == 0) { _isHolder[from] = false; }
         super._update(from, to, value);
     }
-
-    function _getHolderCount() internal view override returns (uint256) { return 0; } // Optional: implement tracking if needed
-    function _getAllHolders() internal view override returns (address[] memory, uint256[] memory) {
-        return (new address[](0), new uint256[](0));
+    function _getHolderCount() internal view override returns (uint256) {
+        uint256 c; for (uint256 i = 0; i < _holderList.length; i++) if (_isHolder[_holderList[i]]) c++; return c;
+    }
+    function _getAllHolders() internal view override returns (address[] memory h, uint256[] memory s) {
+        uint256 c = _getHolderCount(); h = new address[](c); s = new uint256[](c); uint256 idx;
+        for (uint256 i = 0; i < _holderList.length; i++) {
+            address a = _holderList[i]; if (_isHolder[a]) { h[idx] = a; s[idx] = balanceOf(a); idx++; }
+        }
     }
 
-    // === Boilerplate ===
-
+    // Boilerplate
     mapping(address => mapping(address => bool)) private _ops;
     function isOperator(address c, address o) public view override returns (bool) { return _ops[c][o]; }
     function setOperator(address o, bool a) external override returns (bool) {
@@ -209,14 +183,19 @@ contract AsyncVault is
         return id == 0xce3bbe50 || id == 0x620ee8e4 || super.supportsInterface(id);
     }
 
+    function maxDeposit(address) public view override(ERC4626Upgradeable, IERC7540) returns (uint256) { return 0; }
+    function maxMint(address) public view override(ERC4626Upgradeable, IERC7540) returns (uint256) { return 0; }
+    function maxWithdraw(address o) public view override(ERC4626Upgradeable, IERC7540) returns (uint256) { return _claimableRedeem[o].assets; }
+    function maxRedeem(address o) public view override(ERC4626Upgradeable, IERC7540) returns (uint256) { return _claimableRedeem[o].shares; }
+    function previewDeposit(uint256) public pure override(ERC4626Upgradeable, IERC7540) returns (uint256) { revert("ASYNC"); }
+    function previewMint(uint256) public pure override(ERC4626Upgradeable, IERC7540) returns (uint256) { revert("ASYNC"); }
+    function previewWithdraw(uint256) public pure override(ERC4626Upgradeable, IERC7540) returns (uint256) { revert("ASYNC"); }
+    function previewRedeem(uint256) public pure override(ERC4626Upgradeable, IERC7540) returns (uint256) { revert("ASYNC"); }
+
     function pendingDepositRequest(uint256, address c) external view override returns (uint256) { return _pendingDeposit[c]; }
     function claimableDepositRequest(uint256, address c) external view override returns (uint256) { return _claimableDeposit[c].assets; }
     function nextDepositRequestId(address c) external view override returns (uint256) { return _nextDepositRequestId[c]; }
     function pendingRedeemRequest(uint256, address c) external view override returns (uint256) { return _pendingRedeem[c]; }
     function claimableRedeemRequest(uint256, address c) external view override returns (uint256) { return _claimableRedeem[c].shares; }
     function nextRedeemRequestId(address c) external view override returns (uint256) { return _nextRedeemRequestId[c]; }
-
-    function setIdentityRegistry(address r) external { identityRegistry = r; }
-    function setCategory(bytes32 cat) external { category = cat; }
-    function setSettlementPeriod(uint256) external { } // Mock for compatibility
 }

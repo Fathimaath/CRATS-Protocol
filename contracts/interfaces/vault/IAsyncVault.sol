@@ -88,6 +88,14 @@ interface IAsyncVault {
 
     function setSettlementPeriod(uint256 period) external;
 
+    function initialize(
+        address asset_,
+        string calldata name_,
+        string calldata symbol_,
+        address admin,
+        address assetRegistry_
+    ) external;
+
     // ========== View Functions ==========
 
     function identityRegistry() external view returns (address);

@@ -79,6 +79,14 @@ export const Sidebar = () => {
           active={activeView === 'marketplace'} 
           onClick={() => setActiveView('marketplace')} 
         />
+
+        <SidebarItem 
+          icon={<LayoutDashboard />} 
+          label="Transparency Hub" 
+          active={activeView === 'transparency'} 
+          onClick={() => setActiveView('transparency')} 
+          badge="Audit Live"
+        />
       </div>
 
       <div className="mt-8 space-y-1">

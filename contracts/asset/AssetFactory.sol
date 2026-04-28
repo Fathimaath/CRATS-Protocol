@@ -10,6 +10,7 @@ import "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 import "../interfaces/asset/IAssetFactory.sol";
 import "../interfaces/asset/IAssetPlugin.sol";
 import "../interfaces/asset/IAssetToken.sol";
+import "../interfaces/asset/IAssetRegistry.sol";
 import "../utils/AssetConfig.sol";
 import "../utils/CRATSConfig.sol";
 
@@ -30,6 +31,9 @@ contract AssetFactory is
     address public identityRegistry;
     address public complianceModule;
     address public circuitBreakerModule;
+    address public assetRegistry;
+
+    bytes32 public constant VAULT_FACTORY_ROLE = AssetConfig.VAULT_FACTORY_ROLE;
 
     mapping(bytes32 => address) public plugins;
     mapping(address => bool) public isIssuerApproved;
@@ -114,7 +118,7 @@ contract AssetFactory is
             name: name,
             symbol: symbol,
             initialSupply: initialSupply,
-            categoryId: "REAL_ESTATE"
+            categoryId: category
         });
         require(IAssetPlugin(plugins[category]).validateCreation(_msgSender(), params), "AssetFactory: plugin validation failed");
 
@@ -163,7 +167,20 @@ contract AssetFactory is
     }
     function setIdentityRegistry(address registry) external override onlyRole(DEFAULT_ADMIN_ROLE) { identityRegistry = registry; }
     function setComplianceModule(address module) external override onlyRole(DEFAULT_ADMIN_ROLE) { complianceModule = module; }
-    function deployAsset(bytes32) external override {} 
+    function setAssetRegistry(address registry) external onlyRole(DEFAULT_ADMIN_ROLE) { 
+        assetRegistry = registry; 
+    }
+    
+    function onVaultDeployed(
+        address assetToken,
+        address vault,
+        uint8 /* vaultType */
+    ) external override onlyRole(VAULT_FACTORY_ROLE) {
+        require(assetRegistry != address(0), "AssetFactory: registry not set");
+        IAssetRegistry(assetRegistry).registerVault(assetToken, vault);
+    }
+
+    function deployAsset(bytes32) external override {}
 
     function _authorizeUpgrade(address) internal override onlyRole(DEFAULT_ADMIN_ROLE) {}
 }

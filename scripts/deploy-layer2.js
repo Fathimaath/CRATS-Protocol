@@ -67,13 +67,17 @@ async function main() {
   const assetOracleTemplateAddress = await assetOracleTemplate.getAddress();
   console.log("  ✅ AssetOracle Template:", assetOracleTemplateAddress);
 
-  // 5. Deploy AssetRegistry Template
-  console.log("\n5️⃣  Deploying AssetRegistry Template...");
+  // 5. Deploy AssetRegistry (UPGRADEABLE - NEW v3.0 BOR Module)
+  console.log("\n5️⃣  Deploying AssetRegistry Proxy...");
   const AssetRegistry = await hre.ethers.getContractFactory("AssetRegistry");
-  const assetRegistryTemplate = await AssetRegistry.deploy();
-  await assetRegistryTemplate.waitForDeployment();
-  const assetRegistryTemplateAddress = await assetRegistryTemplate.getAddress();
-  console.log("  ✅ AssetRegistry Template:", assetRegistryTemplateAddress);
+  const assetRegistry = await hre.upgrades.deployProxy(
+    AssetRegistry,
+    [deployer.address],
+    { kind: "uups" }
+  );
+  await assetRegistry.waitForDeployment();
+  const assetRegistryAddress = await assetRegistry.getAddress();
+  console.log("  ✅ AssetRegistry Proxy:", assetRegistryAddress);
 
   // 6. Deploy Plugins
   console.log("\n6️⃣  Deploying Plugins...");
@@ -96,9 +100,21 @@ async function main() {
   const REAL_ESTATE = hre.ethers.id("REAL_ESTATE");
   await assetFactory.registerPlugin(REAL_ESTATE, realEstatePluginAddress);
   
+  const FINE_ART = hre.ethers.id("FINE_ART");
+  await assetFactory.registerPlugin(FINE_ART, fineArtPluginAddress);
+  
+  const CARBON_CREDIT = hre.ethers.id("CARBON_CREDIT");
+  await assetFactory.registerPlugin(CARBON_CREDIT, carbonCreditPluginAddress);
+  
   const OPERATOR_ROLE = hre.ethers.id("OPERATOR_ROLE");
   await assetFactory.grantRole(OPERATOR_ROLE, deployer.address);
   await circuitBreaker.grantRole(OPERATOR_ROLE, deployer.address);
+  
+  // Link AssetRegistry to AssetFactory
+  console.log("\n🔗 Linking AssetRegistry to AssetFactory...");
+  await assetFactory.setAssetRegistry(assetRegistryAddress);
+  await assetRegistry.addOperator(assetFactoryAddress); // Allow factory to register vaults
+  console.log("  ✅ Link Complete");
 
   // ========== PERSISTENCE ==========
   let deploymentInfo = JSON.parse(fs.readFileSync(deploymentFile, "utf8"));
@@ -106,7 +122,7 @@ async function main() {
   deploymentInfo.contracts.assetFactory = assetFactoryAddress;
   deploymentInfo.contracts.assetTokenTemplate = assetTokenTemplateAddress;
   deploymentInfo.contracts.assetOracleTemplate = assetOracleTemplateAddress;
-  deploymentInfo.contracts.assetRegistryTemplate = assetRegistryTemplateAddress;
+  deploymentInfo.contracts.assetRegistry = assetRegistryAddress; // Updated
   deploymentInfo.contracts.realEstatePlugin = realEstatePluginAddress;
   deploymentInfo.contracts.fineArtPlugin = fineArtPluginAddress;
   deploymentInfo.contracts.carbonCreditPlugin = carbonCreditPluginAddress;
@@ -116,9 +132,13 @@ async function main() {
   console.log("🎉 LAYER 2 DEPLOYMENT COMPLETE!");
 }
 
-main()
-  .then(() => process.exit(0))
-  .catch((error) => {
-    console.error(error);
-    process.exit(1);
-  });
+if (require.main === module) {
+  main()
+    .then(() => process.exit(0))
+    .catch((error) => {
+      console.error(error);
+      process.exit(1);
+    });
+}
+
+module.exports = { main };

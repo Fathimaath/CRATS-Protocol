@@ -34,6 +34,8 @@ library AssetConfig {
     // === Roles ===
     bytes32 public constant OPERATOR_ROLE = keccak256("OPERATOR_ROLE");
     bytes32 public constant COMPLIANCE_ROLE = keccak256("COMPLIANCE_ROLE");
+    bytes32 public constant VAULT_ROLE = keccak256("VAULT_ROLE");
+    bytes32 public constant VAULT_FACTORY_ROLE = keccak256("VAULT_FACTORY_ROLE");
 
     // === Basis Points ===
     uint256 public constant BASIS_POINTS = 10000;

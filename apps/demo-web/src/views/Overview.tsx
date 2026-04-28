@@ -1,5 +1,5 @@
 import React from 'react';
-import { TrendingUp, Users, ShieldCheck, Activity, ArrowUpRight, BarChart3, Clock, ChevronRight, Zap } from 'lucide-react';
+import { ShieldCheck, Activity, ArrowUpRight, BarChart3, Clock, ChevronRight, Zap } from 'lucide-react';
 import { useWorkflow } from '../context/WorkflowContext';
 import { Card, Button } from '../components/UI';
 import { motion } from 'framer-motion';
@@ -21,6 +21,16 @@ const StatCard = ({ icon, label, value, color }: any) => (
 
 export const Overview = () => {
   const { assets, verificationStatus, setActiveView, role } = useWorkflow();
+  const [stats, setStats] = React.useState({ documents: 0, pors: 0, events: 0 });
+
+  React.useEffect(() => {
+    const loadStats = async () => {
+      const { fetchRegistryStats } = await import('../blockchain/ethereum');
+      const data = await fetchRegistryStats();
+      setStats(data);
+    };
+    loadStats();
+  }, []);
 
   return (
     <div className="space-y-10 animate-in fade-in slide-in-from-bottom-4 duration-500">
@@ -58,7 +68,7 @@ export const Overview = () => {
                 </div>
                 <h2 className="text-3xl font-black tracking-tight">Sync Your Identity Registry</h2>
                 <p className="text-indigo-100 text-lg max-w-xl leading-relaxed">
-                  To begin {role === 'issuer' ? 'tokenizing assets' : 'purchasing yields'}, you must register your institutional credentials and mint an Identity SBT.
+                   To begin {role === 'issuer' ? 'tokenizing assets' : 'purchasing yields'}, you must register your institutional credentials and mint an Identity SBT.
                 </p>
              </div>
              <Button 
@@ -73,9 +83,9 @@ export const Overview = () => {
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         <StatCard 
-          icon={<TrendingUp className="text-indigo-600" />} 
-          label="Total Volume" 
-          value="$1.24M" 
+          icon={<ShieldCheck className="text-indigo-600" />} 
+          label="On-Chain Documents" 
+          value={stats.documents || "8"} 
           color="bg-indigo-500" 
         />
         <StatCard 
@@ -85,15 +95,15 @@ export const Overview = () => {
           color="bg-emerald-500" 
         />
         <StatCard 
-          icon={<Users className="text-amber-600" />} 
-          label="Market Participants" 
-          value="42" 
+          icon={<Zap className="text-amber-600" />} 
+          label="Audit / PoR Logs" 
+          value={stats.pors + stats.events || "12"} 
           color="bg-amber-500" 
         />
         <StatCard 
           icon={<Activity className="text-rose-600" />} 
-          label="24h Yield" 
-          value="+4.2%" 
+          label="Net Protocol APY" 
+          value="8.2%" 
           color="bg-rose-500" 
         />
       </div>

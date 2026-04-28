@@ -24,7 +24,7 @@ contract FineArtPlugin is IAssetPlugin {
         AssetParams calldata params
     ) external pure override returns (bool) {
         require(params.initialSupply > 0, "FineArt: Supply required");
-        require(keccak256(abi.encodePacked(params.categoryId)) == CATEGORY_ID, "FineArt: Invalid category");
+        require(params.categoryId == CATEGORY_ID, "FineArt: Invalid category");
         return true;
     }
 

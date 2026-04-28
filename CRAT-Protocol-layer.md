@@ -16,6 +16,7 @@ The protocol is designed as a hybrid of **Tokeny (ERC-3643)** for compliance, **
 ### Layer 2: Asset Tokenization (Digital Lifecycle)
 *   **Role**: Issuance and lifecycle management of RWA digital twins.
 *   **Compliance Features**: Force transfer (legal overrides), freezing, and document linking.
+*   **Beneficial Ownership**: Real-time transparency of indirect holdings (Layer 3 Vaults) on Layer 2.
 *   **Auditability**: OpenZeppelin UUPS upgradeable proxies for state persistence.
 
 ### Layer 3: Financial Abstraction (Commitment & Yield)
@@ -39,15 +40,17 @@ graph TD
     end
 
     subgraph "Layer 2: Assets"
-        AF[Asset Factory] -->|"deploys"| AT[Asset Token]
-        AT -->|"calls checkTransfer()"| CM[Compliance Module]
-        AT -->|"hooks into"| CB[Circuit Breaker Module]
+        AF[AssetFactory] -->|"deploys"| AT[AssetToken]
+        AT -->|"calls checkTransfer()"| CM[ComplianceModule]
+        AT -->|"hooks into"| CB[CircuitBreakerModule]
+        AR[AssetRegistry] -->|"stores"| BOR[Beneficial Owner Registry]
     end
 
     subgraph "Layer 3: Financials"
-        VF[Vault Factory] -->|"deploys"| SV[SyncVault]
+        VF[VaultFactory] -->|"deploys"| SV[SyncVault]
         SV -->|"pulls NAV from"| AT
-        SV -->|"distributes income via"| YD[Yield Distributor]
+        SV -->|"distributes income via"| YD[YieldDistributor]
+        SV -->|"syncs ownership to"| AR
     end
 
     subgraph "Layer 4: Markets"
@@ -77,6 +80,7 @@ graph TD
 | Contract | Primary Functions | Institutional Role |
 |:---|:---|:---|
 | **AssetFactory.sol** | `deployAsset`, `approveIssuer`, `registerPlugin` | Automated issuance engine for compliant RWA tokens. |
+| **AssetRegistry.sol**| `syncOwner`, `uploadDocument`, `submitPOR` | Source of Truth for Beneficial Ownership, Documents, and Proof of Reserve. |
 | **AssetToken.sol** | `mint`, `forceTransfer`, `setNAV`, `freezeAddress`, `haltTrading` | The digital twin of the RWA. Includes "Regulator" roles for legal overrides. |
 | **CircuitBreakerModule** | `checkTradingAllowed`, `activateAssetHalt` | Protocol-level safety switch to prevent systemic risk. |
 
@@ -109,7 +113,7 @@ graph TD
 7.  **Fundraising**: Marketplace listing goes live; primary market opens.
 8.  **Investment**: Institutional investors (KYC'd) deposit Stablecoins via `SyncVault`.
 9.  **Atomic Settlement**: `SettlementEngine` swaps Treasury AssetTokens for Investor Stablecoins.
-10. **Valuation**: `AssetToken` NAV updated via `PriceOracle` (Manual or Signed feeds).
+10. **Valuation & Sync**: `AssetToken` NAV updated via `PriceOracle`; Vaults trigger `syncBeneficialOwners` to update Layer 2 registry.
 11. **Yield Accrual**: Real-world lease/interest payments collected by Treasury.
 12. **Yield Distribution**: `YieldDistributor` pushes yield to Vault, increasing share price.
 13. **Secondary Market**: Investors trade Vault shares P2P via the `OrderBook`.
@@ -140,6 +144,10 @@ Based on brutal institutional standards, the following considerations must be ac
 ### 5. Treasury Risk (Custodial Risk)
 *   **Observation**: The Treasury mediates settlement.
 *   **Mitigation**: To minimize counterparty risk, the `SettlementEngine` includes `expiry` timeouts. Future iterations should use **Escrow Intermediaries** for larger-scale DvP settlements.
+
+### 6. Beneficial Ownership Transparency (IMPLEMENTED)
+*   **Status**: On-chain link between Layer 3 (Vault shares) and Layer 2 (Asset claims) is active.
+*   **Benefit**: Regulators can now see "through" the vault nominee holder to the underlying investors in real-time.
 
 ---
 

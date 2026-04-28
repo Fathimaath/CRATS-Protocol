@@ -31,26 +31,7 @@ import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
  * @dev See: https://eips.ethereum.org/EIPS/eip-7540
  */
 interface IERC7540 is IERC20 {
-    /**
-     * @dev Emitted when assets are deposited into the vault
-     */
-    event Deposit(
-        address indexed sender,
-        address indexed owner,
-        uint256 assets,
-        uint256 shares
-    );
 
-    /**
-     * @dev Emitted when shares are redeemed from the vault
-     */
-    event Withdraw(
-        address indexed sender,
-        address indexed receiver,
-        address indexed owner,
-        uint256 assets,
-        uint256 shares
-    );
 
     // ========== ERC-4626 Core Functions (Included for completeness) ==========
 
