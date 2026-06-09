@@ -10,6 +10,8 @@ import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "../interfaces/identity/IIdentityRegistry.sol";
 import "../interfaces/vault/ISyncVault.sol";
+import "../interfaces/financial/IFeeEngine.sol";
+import "../interfaces/financial/INAVOracle.sol";
 import "../utils/AssetConfig.sol";
 import "./BaseVault.sol";
 
@@ -34,6 +36,12 @@ contract SyncVault is
     address public circuitBreaker;
     bytes32 public category;
 
+    // ─── FeeEngine / NAVOracle Integration (§5.1) ────────────
+    address public feeEngine;
+    address public navOracle;
+    bytes32 public assetId;
+
+    bytes32 public constant FEE_ENGINE_ROLE = keccak256("FEE_ENGINE_ROLE");
     bytes32 public constant OPERATOR_ROLE = keccak256("OPERATOR_ROLE");
     bytes32 public constant COMPLIANCE_ROLE = keccak256("COMPLIANCE_ROLE");
 
@@ -108,22 +116,94 @@ contract SyncVault is
 
     function deposit(uint256 assets, address receiver) public override(ERC4626Upgradeable, ISyncVault) nonReentrant returns (uint256) {
         _checkCompliance(msg.sender);
-        return super.deposit(assets, receiver);
+        if (feeEngine != address(0)) {
+            IFeeEngine(feeEngine).checkpoint(address(this));
+        }
+        if (navOracle != address(0)) {
+            INAVOracle(navOracle).assertDepositAllowed(assetId);
+        }
+        uint256 entryFee = _calcEntryFee(assets, msg.sender);
+        uint256 netAssets = assets - entryFee;
+        if (entryFee > 0) {
+            IERC20(asset()).safeTransferFrom(msg.sender, feeEngine, entryFee);
+            IFeeEngine(feeEngine).receiveFee(address(this), entryFee);
+        }
+        return super.deposit(netAssets, receiver);
     }
 
     function mint(uint256 shares, address receiver) public override(ERC4626Upgradeable, ISyncVault) nonReentrant returns (uint256) {
         _checkCompliance(msg.sender);
-        return super.mint(shares, receiver);
+        if (feeEngine != address(0)) {
+            IFeeEngine(feeEngine).checkpoint(address(this));
+        }
+        if (navOracle != address(0)) {
+            INAVOracle(navOracle).assertDepositAllowed(assetId);
+        }
+        uint256 assets = super.mint(shares, receiver);
+        uint256 entryFee = _calcEntryFee(assets, msg.sender);
+        if (entryFee > 0) {
+            IERC20(asset()).safeTransfer(feeEngine, entryFee);
+            IFeeEngine(feeEngine).receiveFee(address(this), entryFee);
+        }
+        return assets;
     }
 
     function withdraw(uint256 assets, address receiver, address owner) public override(ERC4626Upgradeable, ISyncVault) nonReentrant returns (uint256) {
         _checkCompliance(owner);
-        return super.withdraw(assets, receiver, owner);
+        if (feeEngine != address(0)) {
+            IFeeEngine(feeEngine).checkpoint(address(this));
+        }
+        uint256 exitFee = _calcExitFee(assets, owner);
+        uint256 netAssets = assets - exitFee;
+        uint256 shares = previewWithdraw(assets);
+        _withdraw(_msgSender(), receiver, owner, netAssets, shares);
+        if (exitFee > 0) {
+            IERC20(asset()).safeTransfer(feeEngine, exitFee);
+            IFeeEngine(feeEngine).receiveFee(address(this), exitFee);
+        }
+        return shares;
     }
 
     function redeem(uint256 shares, address receiver, address owner) public override(ERC4626Upgradeable, ISyncVault) nonReentrant returns (uint256) {
         _checkCompliance(owner);
-        return super.redeem(shares, receiver, owner);
+        if (feeEngine != address(0)) {
+            IFeeEngine(feeEngine).checkpoint(address(this));
+        }
+        uint256 assets = previewRedeem(shares);
+        uint256 exitFee = _calcExitFee(assets, owner);
+        uint256 netAssets = assets - exitFee;
+        _withdraw(_msgSender(), receiver, owner, netAssets, shares);
+        if (exitFee > 0) {
+            IERC20(asset()).safeTransfer(feeEngine, exitFee);
+            IFeeEngine(feeEngine).receiveFee(address(this), exitFee);
+        }
+        return netAssets;
+    }
+
+    // ─── Fee Helpers ────────────────────────────────────────
+
+    function _calcEntryFee(uint256 assets, address investor) internal view returns (uint256) {
+        if (feeEngine == address(0)) return 0;
+        return IFeeEngine(feeEngine).calculateEntryFee(address(this), assets, investor);
+    }
+
+    function _calcExitFee(uint256 assets, address owner) internal view returns (uint256) {
+        if (feeEngine == address(0)) return 0;
+        return IFeeEngine(feeEngine).calculateExitFee(address(this), assets, owner);
+    }
+
+    // ─── Setters ────────────────────────────────────────────
+
+    function setFeeEngine(address _feeEngine) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        feeEngine = _feeEngine;
+    }
+
+    function setNavOracle(address _navOracle) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        navOracle = _navOracle;
+    }
+
+    function setAssetId(bytes32 _assetId) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        assetId = _assetId;
     }
 
     function distributeYield(uint256 amount) external override onlyRole(OPERATOR_ROLE) {

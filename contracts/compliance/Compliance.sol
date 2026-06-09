@@ -4,6 +4,8 @@ pragma solidity ^0.8.25;
 import "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
+import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "../interfaces/compliance/ICompliance.sol";
 import "../interfaces/identity/IIdentityRegistry.sol";
 import "../interfaces/identity/IIdentitySBT.sol";
@@ -20,6 +22,8 @@ contract Compliance is
     UUPSUpgradeable,
     ICompliance
 {
+    using SafeERC20 for IERC20;
+
     IIdentityRegistry public identityRegistry;
 
     // Rules
@@ -31,6 +35,11 @@ contract Compliance is
 
     // NEW: Role-based holding limits
     mapping(uint8 => uint256) private _roleLimits;
+
+    // ─── Compliance Setup Fee (§2.1) ─────
+    IERC20 public usdc;
+    address public protocolTreasury;
+    uint256 public complianceSetupFee;
 
     event JurisdictionBlocked(uint16 indexed jurisdiction, bool blocked);
     event JurisdictionAllowed(uint16 indexed jurisdiction, bool allowed);
@@ -79,6 +88,39 @@ contract Compliance is
     {
         maxInvestorCount[token] = maxCount;
         emit MaxInvestorCountSet(token, maxCount);
+    }
+
+    // ============================================================
+    // COMPLIANCE SETUP FEE
+    // ============================================================
+
+    function setComplianceSetupFee(address _usdc, address _treasury, uint256 _fee)
+        external onlyRole(DEFAULT_ADMIN_ROLE)
+    {
+        usdc = IERC20(_usdc);
+        protocolTreasury = _treasury;
+        complianceSetupFee = _fee;
+    }
+
+    /// @notice Batch-setup compliance rules for a token and collect setup fee (§2.1)
+    function setupRuleset(
+        address token,
+        uint16[] calldata blockJurisdictions,
+        uint16[] calldata allowJurisdictions,
+        uint256 maxInvestors
+    ) external onlyRole(CRATSConfig.COMPLIANCE_ROLE) {
+        if (complianceSetupFee > 0 && address(usdc) != address(0) && protocolTreasury != address(0)) {
+            usdc.safeTransferFrom(_msgSender(), protocolTreasury, complianceSetupFee);
+        }
+        for (uint256 i = 0; i < blockJurisdictions.length; i++) {
+            blockedJurisdictions[blockJurisdictions[i]] = true;
+        }
+        for (uint256 i = 0; i < allowJurisdictions.length; i++) {
+            allowedJurisdictions[allowJurisdictions[i]] = true;
+        }
+        if (maxInvestors > 0) {
+            maxInvestorCount[token] = maxInvestors;
+        }
     }
 
     // ============================================================

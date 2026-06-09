@@ -5,7 +5,10 @@ import "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol"
 import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/utils/ReentrancyGuardUpgradeable.sol";
+import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "../interfaces/asset/IAssetRegistry.sol";
+import "../interfaces/financial/IFeeEngine.sol";
 import "../utils/AssetConfig.sol";
 
 /**
@@ -20,6 +23,8 @@ contract AssetRegistry is
     UUPSUpgradeable,
     IAssetRegistry
 {
+    using SafeERC20 for IERC20;
+
     // === State ===
     Document[] private _documents;
     mapping(bytes32 => uint256) private _docIndex;
@@ -27,6 +32,14 @@ contract AssetRegistry is
     AssetEvent[] private _assetEvents;
 
     mapping(address => bool) public isOperator;
+
+    // ─── Document Filing Fee (§2.1) ─────
+    IERC20 public usdc;
+    address public protocolTreasury;
+    uint256 public documentFilingFee;
+
+    // ─── FeeEngine Integration (§5.5) ===
+    address public feeEngine;
 
     // === Beneficial Ownership State ===
     // assetToken => vault => investor => BeneficialOwner
@@ -129,6 +142,11 @@ contract AssetRegistry is
         require(isOperator[_msgSender()], "AssetRegistry: not operator");
         require(_docIndex[docHash] == 0, "AssetRegistry: already exists");
 
+        // ─── Document Filing Fee (§2.1) ─────────────────────
+        if (documentFilingFee > 0 && address(usdc) != address(0) && protocolTreasury != address(0)) {
+            usdc.safeTransferFrom(_msgSender(), protocolTreasury, documentFilingFee);
+        }
+
         _docIndex[docHash] = _documents.length + 1;
         _documents.push(Document({
             docHash: docHash,
@@ -197,6 +215,18 @@ contract AssetRegistry is
 
     function removeOperator(address operator) external override onlyRole(DEFAULT_ADMIN_ROLE) {
         isOperator[operator] = false;
+    }
+
+    function setFeeEngine(address _feeEngine) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        feeEngine = _feeEngine;
+    }
+
+    function setDocumentFilingFee(address _usdc, address _treasury, uint256 _fee)
+        external onlyRole(DEFAULT_ADMIN_ROLE)
+    {
+        usdc = IERC20(_usdc);
+        protocolTreasury = _treasury;
+        documentFilingFee = _fee;
     }
 
     function _authorizeUpgrade(address) internal override onlyRole(DEFAULT_ADMIN_ROLE) {}
@@ -403,6 +433,14 @@ contract AssetRegistry is
             sumClaims += _owners[assetToken][vault][owners[i]].aptClaim;
         }
         uint256 vaultTotal = IVaultView(vault).totalAssets();
+        // Account for pending fee deductions (§5.5)
+        if (feeEngine != address(0)) {
+            uint256 pendingMgmt = IFeeEngine(feeEngine).pendingMgmtFees(vault);
+            uint256 pendingPerf  = IFeeEngine(feeEngine).pendingPerfFees(vault);
+            vaultTotal = vaultTotal > pendingMgmt + pendingPerf
+                ? vaultTotal - pendingMgmt - pendingPerf
+                : 0;
+        }
         isValid = sumClaims == vaultTotal;
         delta = sumClaims > vaultTotal ? sumClaims - vaultTotal : vaultTotal - sumClaims;
     }

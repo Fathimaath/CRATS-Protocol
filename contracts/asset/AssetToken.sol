@@ -8,6 +8,7 @@ import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/utils/ReentrancyGuardUpgradeable.sol";
 import "../interfaces/asset/IAssetToken.sol";
+import "../interfaces/financial/INAVOracle.sol";
 import "../interfaces/identity/IIdentityRegistry.sol";
 import "../interfaces/compliance/ICompliance.sol";
 import "../interfaces/asset/ICircuitBreakerModule.sol";
@@ -36,6 +37,10 @@ contract AssetToken is
     mapping(address => bool) private _frozen;
     uint256 public currentNAV;
     mapping(bytes32 => string) public assetDocuments;
+
+    // ─── NAVOracle Integration (§5.2) ──────────
+    address public navOracle;
+    bytes32 public vaultId;
 
     struct ForceTransferRecord {
         address from;
@@ -220,9 +225,26 @@ contract AssetToken is
         }
     }
 
+    /// @notice Returns NAV per share — routes through NAVOracle if set, falls back to manual currentNAV
+    function getNAV() external view returns (uint256) {
+        if (address(navOracle) != address(0)) {
+            (uint256 navPerShare, , , ) = INAVOracle(navOracle).calculateNAV(vaultId);
+            return navPerShare;
+        }
+        return currentNAV;
+    }
+
     function setNAV(uint256 newNAV) external override onlyRole(DEFAULT_ADMIN_ROLE) {
         currentNAV = newNAV;
-        emit TradingResumed(block.timestamp, _msgSender()); // Using an existing event for demo simplicity
+        emit TradingResumed(block.timestamp, _msgSender());
+    }
+
+    function setNavOracle(address _navOracle) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        navOracle = _navOracle;
+    }
+
+    function setVaultId(bytes32 _vaultId) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        vaultId = _vaultId;
     }
 
     // === Compliance Hook ===

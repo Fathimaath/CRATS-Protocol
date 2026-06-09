@@ -4,6 +4,8 @@ pragma solidity ^0.8.20;
 // ============ OpenZeppelin Audited Contracts ============
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
+import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
 // ============ Chainlink Audited Interface ============
 import "../interfaces/standards/AggregatorV3Interface.sol";
@@ -12,6 +14,7 @@ import "../interfaces/standards/AggregatorV3Interface.sol";
 import "../interfaces/market/IPriceOracle.sol";
 import "../interfaces/market/IOrderBookEngine.sol";
 import "../interfaces/market/IAMMPool.sol";
+import "../interfaces/financial/INAVOracle.sol";
 
 // ============ Layer 4 Contracts ============
 import "./AMMPool.sol";
@@ -33,6 +36,8 @@ import "./AMMPool.sol";
  * - Confidence-weighted aggregation
  */
 contract PriceOracle is Ownable, ReentrancyGuard {
+    using SafeERC20 for IERC20;
+
     // ============ Standard Price State (Audited Pattern) ============
     mapping(address => IPriceOracle.PriceFeed) public priceFeeds;
     mapping(address => uint256) public lastPrices;
@@ -55,6 +60,16 @@ contract PriceOracle is Ownable, ReentrancyGuard {
     mapping(address => mapping(address => address)) public ammPools; // token0 => token1 => pool
     address[] public registeredAmmPools;
     
+    // ============ NAVOracle Integration (§5.4) ============
+    address public navOracle;
+    mapping(address => bytes32) public assetToId;
+    mapping(address => bool) public rwaAssets;
+
+    // ============ NAV Declaration Fee (§2.1) ============
+    IERC20 public usdc;
+    address public protocolTreasury;
+    uint256 public navDeclarationFee;
+
     // ============ Standard Events (Audited Pattern) ============
     event PriceFeedAdded(address indexed token, address indexed aggregator, uint256 weight);
     event PriceUpdated(address indexed token, uint256 price, IPriceOracle.PriceSource source);
@@ -93,6 +108,11 @@ contract PriceOracle is Ownable, ReentrancyGuard {
         require(aggregator != address(0), "Invalid aggregator");
         require(weight <= WEIGHT_DENOMINATOR, "Weight too high");
         
+        // ─── NAV Declaration Fee (§2.1) ─────────────────────
+        if (navDeclarationFee > 0 && address(usdc) != address(0) && protocolTreasury != address(0)) {
+            usdc.safeTransferFrom(_msgSender(), protocolTreasury, navDeclarationFee);
+        }
+        
         priceFeeds[token] = IPriceOracle.PriceFeed({
             aggregator: aggregator,
             decimals: decimals,
@@ -112,20 +132,47 @@ contract PriceOracle is Ownable, ReentrancyGuard {
         priceFeeds[token].active = false;
     }
 
+    // ============ NAVOracle Configuration (§5.4) ============
+    function setNavOracle(address _navOracle) external onlyOwner {
+        navOracle = _navOracle;
+    }
+
+    function setRwaAsset(address asset, bytes32 id, bool isRWA) external onlyOwner {
+        assetToId[asset] = id;
+        rwaAssets[asset] = isRWA;
+    }
+
+    function setNavDeclarationFee(address _usdc, address _treasury, uint256 _fee)
+        external onlyOwner
+    {
+        usdc = IERC20(_usdc);
+        protocolTreasury = _treasury;
+        navDeclarationFee = _fee;
+    }
+
     // ============ Get Aggregated Price (Standard Aggregation Pattern) ============
     function getAggregatedPrice(address asset) 
         external 
         view 
         returns (uint256 price, uint256 confidence, IPriceOracle.PriceSource primarySource) 
     {
+        // Route RWA assets through NAVOracle (§5.4)
+        if (address(navOracle) != address(0) && rwaAssets[asset]) {
+            uint256 nav = INAVOracle(navOracle).getWeightedNAV(assetToId[asset]);
+            INAVOracle.NAVState navState = INAVOracle(navOracle).getNAVState(assetToId[asset]);
+            uint256 confidence_;
+            if (navState == INAVOracle.NAVState.FRESH) confidence_ = 95;
+            else if (navState == INAVOracle.NAVState.WARNING) confidence_ = 80;
+            else confidence_ = 70;
+            return (nav, confidence_, IPriceOracle.PriceSource.NAV_ORACLE);
+        }
+
         // Check if trading is halted (standard circuit breaker pattern)
         // This would integrate with Layer 2 CircuitBreakerModule
         
         // Get prices from all sources (standard multi-source pattern)
         uint256 marketPrice = _getMarketPrice(asset);
         uint256 navPrice = _getNAVPrice(asset);
-        uint256 ammPrice = _getAMMPrice(asset);
-        uint256 externalPrice = _getExternalPrice(asset);
         
         // Determine liquidity state (standard pattern)
         IPriceOracle.LiquidityState state = _assessLiquidity(asset);

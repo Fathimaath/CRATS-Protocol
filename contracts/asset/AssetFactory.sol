@@ -6,6 +6,8 @@ import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/utils/ReentrancyGuardUpgradeable.sol";
 import "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
+import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
 import "../interfaces/asset/IAssetFactory.sol";
 import "../interfaces/asset/IAssetPlugin.sol";
@@ -26,12 +28,19 @@ contract AssetFactory is
     UUPSUpgradeable, 
     IAssetFactory 
 {
+    using SafeERC20 for IERC20;
+
     // === State ===
     address public assetTokenImplementation;
     address public identityRegistry;
     address public complianceModule;
     address public circuitBreakerModule;
     address public assetRegistry;
+
+    // ─── Issuance Fee (§2.1) ──────────
+    IERC20 public usdc;
+    address public protocolTreasury;
+    uint256 public issuanceFeeBPS; // e.g., 100 BPS = 1%
 
     bytes32 public constant VAULT_FACTORY_ROLE = AssetConfig.VAULT_FACTORY_ROLE;
 
@@ -103,7 +112,21 @@ contract AssetFactory is
         return plugins[category] != address(0);
     }
 
-    // === Asset Deployment ===
+    // ═══════════════════════════════════════════════════════════
+    // FEE MANAGEMENT
+    // ═══════════════════════════════════════════════════════════
+
+    function setFeeConfig(address _usdc, address _treasury, uint256 _issuanceFeeBPS)
+        external onlyRole(DEFAULT_ADMIN_ROLE)
+    {
+        usdc = IERC20(_usdc);
+        protocolTreasury = _treasury;
+        issuanceFeeBPS = _issuanceFeeBPS;
+    }
+
+    // ═══════════════════════════════════════════════════════════
+    // ASSET DEPLOYMENT
+    // ═══════════════════════════════════════════════════════════
 
     function deployAsset(
         string memory name,
@@ -113,6 +136,12 @@ contract AssetFactory is
     ) external nonReentrant returns (address) {
         require(isIssuerApproved[_msgSender()], "AssetFactory: issuer not approved");
         require(plugins[category] != address(0), "AssetFactory: category plugin not found");
+
+        // ─── Issuance Fee (§2.1) ────────────────────────────
+        if (issuanceFeeBPS > 0 && address(usdc) != address(0) && protocolTreasury != address(0)) {
+            uint256 fee = (initialSupply * issuanceFeeBPS) / 10_000;
+            usdc.safeTransferFrom(_msgSender(), protocolTreasury, fee);
+        }
 
         IAssetPlugin.AssetParams memory params = IAssetPlugin.AssetParams({
             name: name,

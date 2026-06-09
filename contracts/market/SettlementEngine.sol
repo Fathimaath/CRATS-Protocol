@@ -9,6 +9,7 @@ import "@openzeppelin/contracts/access/Ownable.sol";
 
 // ============ Layer 4 Interfaces ============
 import "../interfaces/market/ISettlementEngine.sol";
+import "../interfaces/financial/IFeeEngine.sol";
 
 // ============ Layer 1/2/3 Interfaces (Audited Patterns) ============
 import "../interfaces/identity/IIdentityRegistry.sol";
@@ -53,6 +54,13 @@ contract SettlementEngine is ReentrancyGuard, Ownable {
     IIdentityRegistry public identityRegistry;
     ICompliance public complianceModule;
     
+    // FeeEngine integration (§5.3)
+    address public feeEngine;
+
+    // Oracle Query Fee (§2.1)
+    uint256 public oracleQueryFee;
+    address public protocolTreasury;
+
     // Settlement timeout (standard security pattern)
     uint256 public settlementTimeout = 24 hours;
     
@@ -97,6 +105,15 @@ contract SettlementEngine is ReentrancyGuard, Ownable {
 
     function setSettlementTimeout(uint256 timeout) external onlyOwner {
         settlementTimeout = timeout;
+    }
+
+    function setFeeEngine(address _feeEngine) external onlyOwner {
+        feeEngine = _feeEngine;
+    }
+
+    function setOracleQueryFee(address _treasury, uint256 _fee) external onlyOwner {
+        protocolTreasury = _treasury;
+        oracleQueryFee = _fee;
     }
 
     // ============ Initiate DvP Settlement (Standard Atomic Swap Pattern) ============
@@ -226,9 +243,32 @@ contract SettlementEngine is ReentrancyGuard, Ownable {
         
         Settlement storage settlement = settlements[settlementId];
         
+        // Calculate trading fee (§5.3: FeeEngine integration)
+        uint256 tradingFee = 0;
+        uint256 oracleFee = oracleQueryFee;
+        uint256 netPayment = settlement.paymentAmount;
+        if (feeEngine != address(0)) {
+            tradingFee = IFeeEngine(feeEngine).calculateTradingFee(
+                settlement.assetToken,
+                settlement.paymentAmount
+            );
+            netPayment = settlement.paymentAmount - tradingFee;
+        }
+        if (netPayment > oracleFee) {
+            netPayment -= oracleFee;
+        } else {
+            oracleFee = 0;
+        }
+        
         // Transfer tokens (standard atomic swap pattern)
         IERC20(settlement.assetToken).safeTransfer(settlement.to, settlement.assetAmount);
-        IERC20(settlement.paymentToken).safeTransfer(settlement.from, settlement.paymentAmount);
+        IERC20(settlement.paymentToken).safeTransfer(settlement.from, netPayment);
+        if (tradingFee > 0) {
+            IERC20(settlement.paymentToken).safeTransfer(feeEngine, tradingFee);
+        }
+        if (oracleFee > 0 && protocolTreasury != address(0)) {
+            IERC20(settlement.paymentToken).safeTransfer(protocolTreasury, oracleFee);
+        }
     }
 
     // ============ Delivery versus Delivery (DvD) Cross-Asset Swap ============
