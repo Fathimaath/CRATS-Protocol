@@ -40,6 +40,7 @@ contract AsyncVault is
     mapping(address => uint256) private _nextRedeemRequestId;
 
     address public identityRegistry;
+    address public complianceModule;
     bytes32 public category;
     uint256 public settlementPeriod;
     bytes32 public constant OPERATOR_ROLE = keccak256("OPERATOR_ROLE");
@@ -64,6 +65,7 @@ contract AsyncVault is
         _grantRole(OPERATOR_ROLE, admin);
         _grantRole(FULFILLER_ROLE, admin);
 
+        settlementPeriod = 24 * 60 * 60; // 24 hours default
         _mint(address(1), 1); // Minimum supply to prevent inflation attacks (Standard 4626)
     }
 
@@ -93,6 +95,7 @@ contract AsyncVault is
     // === ERC-7540 Async Logic ===
 
     function requestDeposit(uint256 assets, address controller, address owner) external override nonReentrant returns (uint256 requestId) {
+        require(assets > 0, "ZERO_ASSETS");
         require(owner == msg.sender || isOperator(owner, msg.sender), "unauthorized");
         IERC20(asset()).safeTransferFrom(owner, address(this), assets);
         _pendingDeposit[controller] += assets;
@@ -100,13 +103,16 @@ contract AsyncVault is
         requestId = _nextDepositRequestId[controller]++;
         
         // BOR sync: reflect pending position
-        assetRegistry.syncOwner(asset(), controller, balanceOf(controller) + convertToShares(assets));
+        if (address(assetRegistry) != address(0)) {
+            assetRegistry.syncOwner(asset(), controller, balanceOf(controller) + convertToShares(assets));
+        }
         
         emit DepositRequest(controller, owner, requestId, msg.sender, assets);
         return requestId;
     }
 
     function requestRedeem(uint256 shares, address controller, address owner) external override nonReentrant returns (uint256 requestId) {
+        require(shares > 0, "ZERO_SHARES");
         require(owner == msg.sender || isOperator(owner, msg.sender), "unauthorized");
         _transfer(owner, address(this), shares);
         _pendingRedeem[controller] += shares;
@@ -114,7 +120,9 @@ contract AsyncVault is
         requestId = _nextRedeemRequestId[controller]++;
         
         // BOR sync: reflect reduction
-        assetRegistry.syncOwner(asset(), controller, balanceOf(controller) - shares);
+        if (address(assetRegistry) != address(0)) {
+            assetRegistry.syncOwner(asset(), owner, balanceOf(owner));
+        }
         
         emit RedeemRequest(controller, owner, requestId, msg.sender, shares);
         return requestId;
@@ -140,6 +148,7 @@ contract AsyncVault is
     // Consolidated overrides for overlapping signatures between 4626 and 7540
 
     function deposit(uint256 assets, address receiver, address controller) public override(IERC7540) nonReentrant returns (uint256 shares) {
+        require(assets > 0, "Must claim nonzero amount");
         require(controller == msg.sender || isOperator(controller, msg.sender), "unauthorized");
         InternalClaim storage cl = _claimableDeposit[controller];
         require(cl.assets >= assets, "insufficient claimable assets");
@@ -150,6 +159,7 @@ contract AsyncVault is
     }
 
     function redeem(uint256 shares, address receiver, address controller) public override(ERC4626Upgradeable, IERC7540) nonReentrant returns (uint256 assets) {
+        require(shares > 0, "Must claim nonzero shares");
         require(controller == msg.sender || isOperator(controller, msg.sender), "unauthorized");
         InternalClaim storage cl = _claimableRedeem[controller];
         require(cl.shares >= shares, "insufficient claimable shares");
@@ -206,7 +216,7 @@ contract AsyncVault is
         _ops[msg.sender][o] = a; emit OperatorSet(msg.sender, o, a); return true;
     }
     function supportsInterface(bytes4 id) public view override(AccessControlUpgradeable, IERC7540) returns (bool) {
-        return id == 0xce3bbe50 || id == 0x620ee8e4 || super.supportsInterface(id);
+        return id == 0xce3bbe50 || id == 0x620ee8e4 || id == 0xe3bc4e65 || super.supportsInterface(id);
     }
 
     function pendingDepositRequest(uint256, address c) external view override returns (uint256) { return _pendingDeposit[c]; }
@@ -216,7 +226,29 @@ contract AsyncVault is
     function claimableRedeemRequest(uint256, address c) external view override returns (uint256) { return _claimableRedeem[c].shares; }
     function nextRedeemRequestId(address c) external view override returns (uint256) { return _nextRedeemRequestId[c]; }
 
-    function setIdentityRegistry(address r) external { identityRegistry = r; }
+    function setIdentityRegistry(address r) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        require(r != address(0), "invalid registry");
+        identityRegistry = r;
+    }
+
+    function setComplianceModule(address compliance) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        require(compliance != address(0), "invalid compliance");
+        complianceModule = compliance;
+    }
+
     function setCategory(bytes32 cat) external { category = cat; }
-    function setSettlementPeriod(uint256) external { } // Mock for compatibility
+
+    function setSettlementPeriod(uint256 period) external {
+        require(period > 0, "invalid period");
+        settlementPeriod = period;
+    }
+
+    function version() external pure returns (string memory) {
+        return "3.0.0";
+    }
+
+    function emergencyWithdraw(uint256 amount, address to) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        require(to != address(0), "invalid to address");
+        IERC20(asset()).safeTransfer(to, amount);
+    }
 }

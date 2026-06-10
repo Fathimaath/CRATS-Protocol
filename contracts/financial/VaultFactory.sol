@@ -193,7 +193,9 @@ contract VaultFactory is AccessControl, ReentrancyGuard {
                 registry
             );
             ISyncVault(vault).setCategory(params.category);
-            ISyncVault(vault).setIdentityRegistry(identityRegistry);
+            if (identityRegistry != address(0)) {
+                ISyncVault(vault).setIdentityRegistry(identityRegistry);
+            }
         } else {
             IAsyncVault(vault).initialize(
                 params.asset,

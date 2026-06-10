@@ -14,27 +14,29 @@ async function main() {
         throw new Error("Azure Token not deployed. Run Step 4 first.");
     }
 
-    const assetOracle = await hre.ethers.getContractAt("AssetOracle", deployment.contracts.assetOracle);
+    const navOracle = await hre.ethers.getContractAt("NAVOracle", deployment.contracts.navOracle);
+    const assetId = hre.ethers.zeroPadValue(deployment.contracts.azureToken, 32);
     
-    // Set NAV: $1.00 per token = $10M total
+    // Set NAV: $1.00 per token
     const nav = hre.ethers.parseUnits("1.00", 18);
     
-    console.log("Proposing NAV update to $1.00...");
-    const tx = await assetOracle.proposeNAV(deployment.contracts.azureToken, nav);
-    await tx.wait();
-
-    console.log("Approving NAV update (Simulation)...");
-    // In multi-sig, other signers would call this. Here admin approves.
-    const approveTx = await assetOracle.approveNAV(deployment.contracts.azureToken, 0); // index 0
-    await approveTx.wait();
+    console.log("Submitting initial NAV of $1.00 to NAVOracle...");
+    const tx = await navOracle.connect(deployer).submitNAV(
+        assetId,
+        nav,
+        Math.floor(Date.now() / 1000), // valuationDate
+        hre.ethers.id("RICS_APPRAISAL_DOC"), // documentHash
+        0 // ValuationMethod.FULL_APPRAISAL (index 0)
+    );
+    const receipt = await tx.wait();
 
     console.log("✅ NAV configured successfully.");
 
     await saveWorkflowResult(6, {
         name: "Oracle / NAV Config",
-        txHash: receipt.hash || tx.hash,
+        txHash: receipt.hash,
         contract: deployment.contracts.azureToken,
-        details: `NAV: $1,200/share, Source: RICS Appraisal`,
+        details: `NAV: $1.00/token, Source: RICS Appraisal`,
         layer: "L2"
     });
 }

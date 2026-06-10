@@ -16,9 +16,60 @@ async function main() {
 
     const orderBook = await hre.ethers.getContractAt("OrderBookEngine", deployment.contracts.orderBookEngine);
     
+    const identityRegistry = await hre.ethers.getContractAt("IdentityRegistry", deployment.contracts.identityRegistry);
+    const identitySBT = await hre.ethers.getContractAt("IdentitySBT", deployment.contracts.identitySBT);
+    
+    // Configure compliance on OrderBookEngine if not already configured
+    const currentRegistry = await orderBook.identityRegistry();
+    if (currentRegistry === hre.ethers.ZeroAddress) {
+        console.log("Configuring compliance on OrderBookEngine...");
+        await (await orderBook.connect(deployer).setComplianceConfig(
+            deployment.contracts.identityRegistry,
+            deployment.contracts.complianceModule
+        )).wait();
+    }
+
+    // Check if buyer is verified, if not onboard them
+    const existingTokenId = await identitySBT.tokenIdOf(buyer.address);
+    if (existingTokenId == 0) {
+        console.log("Onboarding buyer...");
+        const roleInvestor = 1;
+        const jurisdiction = 250;
+        const did = "did:crats:buyer-bob";
+        const didHash = hre.ethers.id(did);
+        const expiresAt = Math.floor(Date.now() / 1000) + (365 * 24 * 60 * 60);
+
+        console.log("  Registering buyer identity...");
+        const regTx = await identityRegistry.connect(deployer).registerIdentity(
+            buyer.address,
+            roleInvestor,
+            jurisdiction,
+            didHash,
+            did,
+            expiresAt
+        );
+        await regTx.wait();
+
+        const tokenId = await identitySBT.tokenIdOf(buyer.address);
+        console.log("  Verifying buyer KYC status...");
+        await (await identitySBT.connect(deployer).updateStatus(tokenId, 2)).wait();
+        console.log("✅ Buyer onboarded and verified.");
+    }
+
+    const quoteToken = deployment.contracts.usdc;
+    const usdc = await hre.ethers.getContractAt("MockERC20", quoteToken);
+    
+    // Mint 1000 USDC to buyer
+    const mintAmount = hre.ethers.parseEther("1000");
+    console.log("Minting 1000 USDC to Buyer...");
+    await (await usdc.connect(buyer).mint(buyer.address, mintAmount)).wait();
+
+    // Approve OrderBookEngine to spend buyer's USDC
+    console.log("Approving OrderBookEngine to spend buyer's USDC...");
+    await (await usdc.connect(buyer).approve(deployment.contracts.orderBookEngine, mintAmount)).wait();
+
     // Order Parameters
     const baseToken = deployment.contracts.azureVault;
-    const quoteToken = "0x0000000000000000000000000000000000000000"; // Simulation: Native ETH or mock stable
     const amount = hre.ethers.parseEther("100");
     const price = hre.ethers.parseUnits("1.05", 18); // Asking for $1.05
     const isBuy = true;

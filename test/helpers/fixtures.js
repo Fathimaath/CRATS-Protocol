@@ -312,22 +312,12 @@ async function deployLayer3Templates() {
 
   // Deploy SyncVault template
   const SyncVault = await ethers.getContractFactory("SyncVault");
-  const syncVaultTemplate = await SyncVault.deploy(
-    ethers.ZeroAddress,
-    "CRATS Sync Vault",
-    "cSV",
-    admin.address
-  );
+  const syncVaultTemplate = await SyncVault.deploy();
   await syncVaultTemplate.waitForDeployment();
 
   // Deploy AsyncVault template
   const AsyncVault = await ethers.getContractFactory("AsyncVault");
-  const asyncVaultTemplate = await AsyncVault.deploy(
-    ethers.ZeroAddress,
-    "CRATS Async Vault",
-    "cAV",
-    admin.address
-  );
+  const asyncVaultTemplate = await AsyncVault.deploy();
   await asyncVaultTemplate.waitForDeployment();
 
   return {
@@ -347,21 +337,11 @@ async function deployAndInitializeLayer3(layer1Contracts, layer2Contracts) {
 
   // Deploy templates
   const SyncVault = await ethers.getContractFactory("SyncVault");
-  const syncVaultTemplate = await SyncVault.deploy(
-    ethers.ZeroAddress,
-    "CRATS Sync Vault",
-    "cSV",
-    admin.address
-  );
+  const syncVaultTemplate = await SyncVault.deploy();
   await syncVaultTemplate.waitForDeployment();
 
   const AsyncVault = await ethers.getContractFactory("AsyncVault");
-  const asyncVaultTemplate = await AsyncVault.deploy(
-    ethers.ZeroAddress,
-    "CRATS Async Vault",
-    "cAV",
-    admin.address
-  );
+  const asyncVaultTemplate = await AsyncVault.deploy();
   await asyncVaultTemplate.waitForDeployment();
 
   // Deploy VaultFactory

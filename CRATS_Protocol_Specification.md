@@ -1,10 +1,10 @@
 # TECHNICAL SPECIFICATION
 ## CRATS Protocol Technical Specification & Development Lifecycle
-### Requirements, Design & Development Phases (Current State - v3.0.0)
+### Requirements, Design & Development Phases (Current State - v6.0.0)
 **Real-World Asset Tokenization Platform**  
 **Ethereum Sepolia (Development Network)**
 
-*CopyM Platform â€” Confidential*
+*CopyM Platform — Confidential*
 
 ---
 
@@ -20,8 +20,8 @@
 3. [Design Phase](#3-design-phase)
    - 3.1 Layer 1 Design: Identity & Compliance (Soulbound Gatekeeping)
    - 3.2 Layer 2 Design: Asset Tokenization (ERC-3643 & Compliance Modules)
-   - 3.3 Layer 3 Design: Financial Vaults (ERC-4626 & Beneficial Owner Registry)
-   - 3.4 Layer 4 Design: Marketplace & Settlement (Atomic DvP)
+   - 3.3 Layer 3 Design: Financial Vaults (EIP-1167 Templates & EIP-7540 Async Logic)
+   - 3.4 Layer 4 Design: Marketplace & Secondary Settlement (Atomic DvP)
 4. [Development Phase](#4-development-phase)
    - 4.1 Frontend Portals Architecture (Vite + React + Tailwind CSS)
    - 4.2 Backend Services & SDK Architecture (Node.js + Express + Prisma + Ethers)
@@ -30,12 +30,21 @@
 5. [Protocol Operations & Workflows](#5-protocol-operations--workflows)
    - 5.1 The 14-Step Institutional Lifecycle
    - 5.2 The Tri-Stage Investment Lifecycle (Retail Mediation)
-6. [Institutional Reality Checks & Gap Analysis](#6-institutional-reality-checks--gap-analysis)
-7. [Appendix: Core Smart Contract Code Snippets](#7-appendix-core-smart-contract-code-snippets)
-   - 7.1 Layer 1: Identity & Compliance (Gatekeeping)
-   - 7.2 Layer 2: Asset Management & RWA Plugins
-   - 7.3 Layer 3: Financial Layer & Vault Share Minting
-   - 7.4 Layer 4: Marketplace & Secondary Settlement
+6. [Section A: Tokenomics & Fee Structure](#6-section-a-tokenomics--fee-structure)
+   - 6.1 Fee Configurations & Distribution Models
+   - 6.2 High Water Mark (HWM) Validation Rules
+   - 6.3 Accrual Mechanics (Management & Performance Fees)
+7. [Section B: NAV Calculation Methodology](#7-section-b-nav-calculation-methodology)
+   - 7.1 Multi-source Price Aggregation & Valuation Registry
+   - 7.2 Staleness Circuit Breakers (FRESH, WARNING, CRITICAL, STALE)
+   - 7.3 Stake-based Dispute Resolution & Slashing Rules
+8. [Institutional Reality Checks & Gap Analysis](#8-institutional-reality-checks--gap-analysis)
+9. [Appendix: Core Smart Contract Code Snippets](#9-appendix-core-smart-contract-code-snippets)
+   - 9.1 Layer 1: Identity & Compliance (Gatekeeping)
+   - 9.2 Layer 2: Asset Management & RWA Plugins
+   - 9.3 Layer 3: Financial Layer & Vault Share Minting (Sync/Async Vaults)
+   - 9.4 Layer 3 Financials: FeeEngine & NAVOracle
+   - 9.5 Layer 4: Marketplace & Secondary Settlement
 
 ---
 
@@ -49,7 +58,7 @@ The system is segregated into four distinct layers, each communicating with adja
 
 *   **Layer 1: Identity & Compliance (The Trust Foundation):** Governs multi-jurisdictional gatekeeping. It acts as an on-chain registry of verified participants. Access is restricted using Soulbound Tokens (SBTs) and Decentralized Identifiers (DIDs).
 *   **Layer 2: Asset Tokenization (Digital Lifecycle):** Manages the lifecycle of the RWA digital twins (represented as `AssetToken` contracts). This layer enforces compliance modules, force transfers (regulatory overrides), freezes, and document linking.
-*   **Layer 3: Financial Abstraction (Commitment & Yield):** Decouples direct asset exposure from retail/institutional liquidity via ERC-4626 investment vaults. It distributes yields automatically and maintains the **Beneficial Owner Registry (BOR)** for regulatory transparency.
+*   **Layer 3: Financial Abstraction (Commitment & Yield):** Decouples direct asset exposure from retail/institutional liquidity via EIP-1167 minimal proxy vaults (both Synchronous ERC-4626 and Asynchronous ERC-7540 models). It distributes yields automatically, charges asset fees, and maintains the **Beneficial Owner Registry (BOR)** for regulatory transparency.
 *   **Layer 4: Marketplace & Secondary (Liquidity):** Integrates the settlement engine, pricing oracles, and order books. It facilitates atomic Delivery vs. Payment (DvP) trades, mitigating counterparty and execution risks.
 
 ### 1.2 Low-Level Contract Relationships
@@ -64,26 +73,31 @@ graph TD
     end
 
     subgraph "Layer 2: Assets"
-        AF[AssetFactory] -->|"deploys"| AT[AssetToken]
+        AF[AssetFactory] -->|"deploys via EIP-1167"| AT[AssetToken]
         AT -->|"calls checkTransfer()"| CM[Compliance Module]
         AT -->|"hooks into"| CB[CircuitBreakerModule]
         AR[AssetRegistry] -->|"stores"| BOR[Beneficial Owner Registry]
     end
 
     subgraph "Layer 3: Financials"
-        VF[VaultFactory] -->|"deploys"| SV[SyncVault]
-        SV -->|"pulls NAV from"| AT
+        VF[VaultFactory] -->|"deploys via EIP-1167"| SV[SyncVault]
+        VF -->|"deploys via EIP-1167"| AV[AsyncVault]
+        SV -->|"pulls NAV from"| NO[NAVOracle]
+        AV -->|"pulls NAV from"| NO
+        NO -->|"checks fees from"| FE[FeeEngine]
         SV -->|"distributes income via"| YD[YieldDistributor]
         SV -->|"syncs ownership to"| AR
+        AV -->|"syncs ownership to"| AR
     end
 
     subgraph "Layer 4: Markets"
         SE[Settlement Engine] -->|"executes DvP swap"| SV
         PO[Price Oracle] -->|"aggregates NAV + AMM"| SE
-        PO -->|"Chainlink fallback"| CL[Aggregator V3]
+        PO -->|"NAV fallback"| NO
     end
 
     SV -.->|Identity Check| IR
+    AV -.->|Identity Check| IR
     AT -.->|Identity Check| IR
 ```
 
@@ -99,7 +113,7 @@ The platform handles three core user profiles with distinct operational boundari
 1.  **Register Account:** Securely sign up and connect a web3 wallet (MetaMask/Phantom) or establish an institutional custodial wallet.
 2.  **Complete KYC:** Complete identity verification (individuals) or entity verification (businesses) via Sumsub.
 3.  **Receive Compliance Approval:** Once verified, receive an Identity SBT to whitelist the wallet address.
-4.  **Invest in Tokenized Assets:** Deposit stablecoins (USDT/USDC) into ERC-4626 vaults to receive yield-bearing vault shares.
+4.  **Invest in Tokenized Assets:** Deposit stablecoins (USDT/USDC) into vaults to receive yield-bearing vault shares.
 5.  **Receive Yield:** Earn returns from underlying real-world assets.
 6.  **Trade Investments:** Buy or sell vault shares on the secondary marketplace.
 
@@ -108,7 +122,7 @@ The platform handles three core user profiles with distinct operational boundari
 2.  **Complete KYB:** Verify business entity credentials via Sumsub KYB.
 3.  **Upload Asset Documents:** Submit property titles, legal claims, and proof-of-reserve documents (pinned on IPFS).
 4.  **Tokenize Assets:** Create compliant digital tokens representing the fractional ownership of physical assets.
-5.  **Create Vaults:** Set up investment vaults linked to specific tokenized assets with predefined yield rules.
+5.  **Create Vaults:** Set up investment vaults linked to specific tokenized assets with predefined yield and fee rules.
 6.  **Raise Capital:** List vaults on the primary marketplace.
 
 #### Admin Requirements
@@ -139,9 +153,9 @@ The platform handles three core user profiles with distinct operational boundari
 *   **Standard Frameworks:**
     *   *ERC-3643 (T-REX):* Regulated token standard with compliance rules.
     *   *ERC-5192:* Minimal Soulbound Token interface for identity registry whitelist.
-    *   *ERC-7518 (Force Transfer):* Allows regulatory clawbacks or court-ordered recovery.
+    *   *ERC-7540:* Asynchronous tokenized vault standard for illiquid assets.
     *   *ERC-4626:* Standardized, yield-bearing vaults.
-    *   *Proxy Pattern:* OpenZeppelin UUPS (UUPSUpgradeable) to enable security patches without state disruption.
+    *   *Clone Pattern:* EIP-1167 Minimal Proxies for gas-efficient deployment of Sync/Async vaults from pre-deployed templates.
 
 ---
 
@@ -159,11 +173,13 @@ Asset issuers deploy tokens representing RWAs (e.g. Real Estate, Debt). The `Ass
     `Issuer Studio` -> `IPFS Metadata Upload` -> `AssetFactory.deployAsset()` -> `AssetToken` deployment -> Link `AssetRegistry` metadata -> Assign Regulator Roles.
 *   **Outputs:** ERC-3643 Token Contract, IPFS-anchored Documents, Registry Mapping.
 
-### 3.3 Layer 3 Design: Financial Vaults (ERC-4626 & Beneficial Owner Registry)
-Layer 3 aggregates asset tokens into investment vehicles. The core innovation is **Look-Through Transparency** via the **Beneficial Owner Registry (BOR)**. When investors hold shares in a Vault (nominee), the vault automatically syncs the underlying investor's address, share count, and basis points ownership to the L2 `AssetRegistry`.
-*   **Component Flow:**
-    `Investor` -> `USDT Deposit` -> `SyncVault.deposit()` -> `SyncVault` mints shares (vAPT) -> Triggers `syncOwner()` hook on `AssetRegistry`.
-*   **Outputs:** Vault Shares (vAPT), Yield-bearing balance, On-chain ultimate beneficial ownership mapping.
+### 3.3 Layer 3 Design: Financial Vaults (EIP-1167 Templates & EIP-7540 Async Logic)
+Layer 3 aggregates asset tokens into investment vehicles. 
+- **Synchronous Vaults (`SyncVault`):** Standard ERC-4626 implementation for liquid assets where deposits/redemptions are executed atomically.
+- **Asynchronous Vaults (`AsyncVault`):** Compliance-gated, ERC-7540 asynchronous vaults. Deposits and redemptions undergo a multi-step request, fulfillment (by whitelisted operators/fulfillers), and claim lifecycle to accommodate RWA liquidity locks and regulatory settlement times.
+- **Look-Through Transparency:** Supported via the **Beneficial Owner Registry (BOR)**. During vault actions, the vault automatically syncs ownership state to the Layer 2 `AssetRegistry`.
+- **EIP-1167 Clone Architecture:** Instantiated via `VaultFactory` using minimal proxies pointing to logic templates, ensuring ultra-low deployment gas costs.
+- **V6 Security Controls:** Zero-address guards on all state setters, admin-controlled emergency withdrawal, and UUPS upgrades for system-wide logic.
 
 ### 3.4 Layer 4 Design: Marketplace & Settlement (Atomic DvP)
 Facilitates primary issuance and secondary trading. The `SettlementEngine` operates as an escrow contract. Buyers post payments (USDC/USDT), sellers post RWA assets, and the engine executes the swap atomically.
@@ -185,7 +201,7 @@ Built using **React, Vite, and Tailwind CSS** for performance and modern UI aest
 Built on **Node.js, Express, Prisma ORM, MySQL, and Ethers.js**.
 *   **`cratsIdentityService.js`:** Interfaces with `IdentityRegistry` and `IdentitySBT`. Handles DID registration and role updates.
 *   **`cratsAssetService.js`:** Interacts with `AssetFactory` and `AssetToken` to manage RWA token deployment, approve authorized issuers, and execute treasury transfers.
-*   **`cratsVaultService.js`:** Interacts with `SyncVault` and `VaultFactory`. Tracks vault shares, deposits, and triggers beneficial ownership syncing.
+*   **`cratsVaultService.js`:** Interacts with `SyncVault`, `AsyncVault`, and `VaultFactory`. Tracks vault shares, deposits, redemptions, and triggers beneficial ownership syncing.
 *   **`cratsSettlementService.js`:** Interfaces with `SettlementEngine` to coordinate trade matching, compliance verification, and execution.
 *   **`sumsubService.js` / `enhancedSumSubStorage.js`:** Manages Sumsub SDK configurations, retrieves KYC tokens, and processes incoming webhook verification events.
 *   **`fireblocks.service.js`:** Handles wallet creation, generates multi-chain deposit addresses, and manages transaction payloads.
@@ -198,56 +214,56 @@ Fireblocks is used for **MPC custodial wallets and secure transaction signing**,
 ```
 +---------------------------------------------------------------------------------+
 |                                COPYM PLATFORM                                   |
+|                                                                                 |
+|  +--------------------+      +--------------------+      +--------------------+  |
+|  |   Investor Portal  |      |    Admin Portal    |      |    Issuer Studio   |  |
+|  +---------+----------+      +---------+----------+      +---------+----------+  |
++------------|---------------------------|---------------------------|------------+
+             |                           |                           |             
+             +-------------+-------------+                           |             
+                           |                                         |             
+                           v                                         v             
 +---------------------------------------------------------------------------------+
-          |                                                         |
-          v (API SDK Calls)                                         v (Ethers JSON-RPC)
-+-----------------------------------+             +-------------------------------+
-|         FIREBLOCKS SYSTEM         |             |      SEPOLIA BLOCKCHAIN       |
-|  - MPC Vault Wallet Generation    |             |  - CRATS Registry Contracts   |
-|  - Multi-Sig Co-Signing           |             |  - SyncVault (ERC-4626)       |
-|  - Compliance Policy Engine       |             |  - AssetToken (ERC-3643)      |
-+-----------------------------------+             +-------------------------------+
-          |                                                         |
-          +--- (Sends Signed Tx to broadcast to blockchain) --------+
+|  CopyM Backend Service (Node.js/Express)                                        |
+|                                                                                 |
+|  +---------------------------+             +---------------------------------+  |
+|  | Fireblocks Integration    |             | Ethers.js Smart Contract Driver |  |
+|  | (API SDK/Signing Payloads) |             | (Sepolia/Mainnet Provider)      |  |
+|  +-------------+-------------+             +----------------+----------------+  |
++----------------|--------------------------------------------|-------------------+
+                 |                                            |                    
+   [REST API Calls via SDK]                                   |                    
+                 |                                            |                    
+                 v                                            |                    
++-----------------------------------+                         |                    
+| FIREBLOCKS MPC CUSTODY ENGINE     |                         |                    
+|                                   |                         |                    
+|  +-----------------------------+  |                         |                    
+|  | Investor Custody Wallets    |  |                         |                    
+|  +-----------------------------+  |                         |                    
+|  | Platform Treasury Wallet    |  |                         |                    
+|  +-----------------------------+  |                         |                    
+|  | Gas Station Auto-Fueler     |  |                         |                    
+|  +-----------------------------+  |                         |                    
++----------------+------------------+                         |                    
+                 |                                            |                    
+                 | [Sign Transaction & Broadcast]             | [Interact]         
+                 +-----------------------+   +----------------+                    
+                                         |   |                                     
+                                         v   v                                     
++---------------------------------------------------------------------------------+
+| BLOCKCHAIN LAYER (Sepolia Testnet / Ethereum Mainnet)                           |
+|                                                                                 |
+|  +-------------------------+    +-----------------------+    +---------------+  |
+|  | Layer 1: Identity & KYC |    | Layer 2: Asset Tokens |    | Layer 3:      |  |
+|  | (IdentityRegistry/SBT)  |    | (AssetToken/Registry) |    | Sync/Async    |  |
+|  +-------------------------+    +-----------------------+    | Vaults        |  |
+|                                                              +---------------+  |
++---------------------------------------------------------------------------------+
 ```
 
-#### Custodial Transaction Flow (USDC to Vault Deposit):
-1.  **User Action:** Investor requests to buy 100 vault shares.
-2.  **API Call:** Backend formats a `CONTRACT_CALL` transaction payload and sends it to the Fireblocks SDK.
-3.  **Mediation:** The Fireblocks Policy Engine checks the transaction against white-listed contracts.
-4.  **Signing:** Fireblocks MPC nodes sign the transaction using distributed key shares.
-5.  **Broadcast:** Fireblocks broadcasts the signed transaction payload to the Sepolia network.
-6.  **On-chain Execution:** The transaction calls `deposit()` on the `SyncVault` contract. The Vault mints shares back to the investor's Fireblocks address.
-7.  **Callback:** Backend polls or listens to webhook statuses, updates database records when the status shifts to `COMPLETED`.
-
 ### 4.4 Smart Contract Architecture
-
-The core contracts deployed to Ethereum Sepolia implement the business logic for the 4-layer stack. Detailed implementations for these contracts are provided in [Section 7 (Appendix)](#7-appendix-core-smart-contract-source-code).
-
-#### ðŸ” Layer 1: Identity & Compliance
-*   `IdentityRegistry.sol`: Handles identity registration mapping and compliance verification queries (`isVerified`). Deployed as a UUPS upgradeable proxy.
-*   `IdentitySBT.sol`: Implements non-transferable Soulbound Token (ERC-5192) indicating the user's compliant onboarding status.
-*   `KYCProvidersRegistry.sol`: Maintains list of approved KYC/KYB screening authorities.
-*   `Compliance.sol` / `CircuitBreakerModule.sol` / `TravelRuleModule.sol`: Logic modules verifying transaction sizes, jurisdictions, and travel rules before allowing transfers.
-
-#### ðŸ’Ž Layer 2: Asset Management
-*   `AssetFactory.sol`: Deploys new `AssetToken` upgradeable proxy instances.
-*   `AssetToken.sol`: Implements the ERC-3643 standard. Supports `forceTransfer` (regulatory override), `setAddressFrozen`, and `haltTrading`.
-*   `AssetRegistry.sol`: Acts as the central ledger for asset documents, Proof of Reserve (PoR), and is home to the **Beneficial Owner Registry (BOR)**.
-*   `AssetOracle.sol`: Integrates Chainlink-compliant oracle mechanisms for token valuation updates.
-
-#### ðŸ“ˆ Layer 3: Financial Layer
-*   `VaultFactory.sol`: Deploys SyncVault and AsyncVault instances.
-*   `BaseVault.sol`: Abstract base contract linking vaults with the Layer 2 `AssetRegistry` to automate Beneficial Owner syncing.
-*   `SyncVault.sol`: Synchronous ERC-4626 vault utilizing stablecoins to mint shares backed by locked `AssetTokens`.
-*   `AsyncVault.sol`: Asynchronous ERC-7540 compliant vault tracking deposit and redemption requests during queue lifecycles.
-*   `YieldDistributor.sol`: Coordinates yield payment cycles and pushes accrued income to active vaults.
-
-#### ðŸ›’ Layer 4: Market & Settlement
-*   `PriceOracle.sol`: Aggregates pricing data from TWAP indices, AMMs, and NAV updates.
-*   `SettlementEngine.sol`: Escrows assets and payments to execute atomic DvP trades.
-*   `ClearingHouse.sol` / `ComplianceGate.sol`: Ensures clearing policies and whitelist checks are validated immediately prior to execution.
-*   `OrderBookEngine.sol` / `MatchingEngine.sol`: Secondary market logic facilitating bid/ask matching and book keeping.
+The EVM smart contracts represent the **execution and state layer**. All identity registration, compliance enforcement, vault logic, and settlement occur on-chain. The Fireblocks MPC API signs and broadcasts transactions from the Copym Backend to execute calls on these contracts.
 
 ---
 
@@ -268,11 +284,11 @@ The core contracts deployed to Ethereum Sepolia implement the business logic for
 3.  **Studio Setup:** Issuer inputs asset parameters (NAV, supply, ticker) in the Portal.
 4.  **Tokenization:** `AssetFactory` deploys `AssetToken`; the supply is minted to the **Platform Treasury**.
 5.  **Compliance Config:** `Compliance.sol` modules are applied (e.g., maximum limits on non-accredited investors).
-6.  **Vault Setup:** `VaultFactory` deploys a `SyncVault` linked to the asset.
+6.  **Vault Setup:** `VaultFactory` deploys a `SyncVault` or `AsyncVault` clone linked to the asset.
 7.  **Primary Listing:** Vault is whitelisted on the Marketplace.
-8.  **Investment:** Onboarded investors deposit stablecoins (USDT) into the `SyncVault`.
+8.  **Investment:** Onboarded investors deposit stablecoins (USDT) into the vault.
 9.  **Atomic Settlement:** `SettlementEngine` swaps the Treasury's `AssetTokens` for the investor's stablecoins.
-10. **Valuation & Sync:** `AssetToken` NAV is updated. The Vault calls `syncOwner` on the `AssetRegistry` to update the Beneficial Owner Registry (BOR).
+10. **Valuation & Sync:** `AssetToken` NAV is updated in `NAVOracle`. The Vault calls `syncOwner` on the `AssetRegistry` to update the Beneficial Owner Registry (BOR).
 11. **Yield Accrual:** Underlying asset rents/revenues are collected by the platform treasury.
 12. **Yield Distribution:** `YieldDistributor` pushes yield to the vault, inflating the share price to reflect yield accrual.
 13. **Secondary Market:** Investors exchange vault shares peer-to-peer via the `OrderBookEngine`.
@@ -289,12 +305,70 @@ To enable retail investors holding standard assets (USDC/USDT) in non-custodial 
     The Treasury detects the transfer and performs the conversion on-chain. It approves the required amount of RWA `AssetTokens` for the destination Vault.
     *Logic:* `AssetToken.approve(vaultAddress, assetAmount)`
 *   **Stage 3: Vault Share Minting (Atomic Settlement):**
-    The Treasury deposits the RWA assets into the Vault, specifying the **Investor's Wallet Address** as the share recipient. The Vault atomically mints the yield-bearing shares (`vAPT`) directly to the investor's wallet.
+    The Treasury deposits the RWA assets into the Vault, specifying the **Investor's Wallet Address** as the share recipient. The Vault atomically mints the yield-bearing shares directly to the investor's wallet.
     *Logic:* `SyncVault.deposit(assetAmount, investorAddress)`
 
 ---
 
-## 6. Institutional Reality Checks & Gap Analysis
+## 6. Section A: Tokenomics & Fee Structure
+
+The CRATS Protocol incorporates a fully programmatic, customizable, and audit-compliant Fee Engine (`FeeEngine.sol`) to regulate financial flows, incentivize operators, and capture protocol revenue without compromising NAV accuracy.
+
+### 6.1 Fee Configurations & Distribution Models
+The `FeeEngine` defines fee structures on a per-vault basis using the `FeeConfig` structure. This includes:
+- **Management Fee (BPS):** An annual basis points fee calculated on time-weighted Assets Under Management (AUM).
+- **Performance Fee (BPS):** A basis points fee applied to net profits generated by the vault, calculated using a High Water Mark (HWM) mechanism to avoid double-charging during volatility.
+- **Protocol Split (BPS):** Defines how the collected fees are divided between the **Protocol Treasury** (platform revenue) and the **Asset Manager** (operational incentive).
+
+### 6.2 High Water Mark (HWM) Validation Rules
+To ensure institutional fairness, the `FeeEngine` enforces High Water Mark protection:
+1.  **Checkpoint Records:** A `HWMRecord` is maintained for each vault, storing the highest NAV per share achieved at any prior fee distribution checkpoint.
+2.  **Performance Fee Qualification:** Performance fees are only calculated on the growth of the NAV per share above the HWM.
+3.  **HWM Adjustments:** If the NAV per share increases past the HWM at a checkpoint, the HWM is updated to the new peak. If the NAV falls, the HWM remains unchanged, preventing fees from being charged on recovered losses.
+
+### 6.3 Accrual Mechanics (Management & Performance Fees)
+- **Management Fee Accrual:**
+  $$\text{Accrued Fee} = \frac{\text{AUM} \times \text{Management Fee BPS}}{10,000} \times \frac{\text{Time Elapsed}}{\text{Seconds in a Year}}$$
+  Calculated continuously using block timestamps to prevent front-running.
+- **Performance Fee Accrual:**
+  $$\text{Performance Fee} = \max\left(0, \frac{(\text{Current NAV} - \text{HWM}) \times \text{Total Shares} \times \text{Performance Fee BPS}}{10,000}\right)$$
+  Charged during valuation updates and checkpoints, with the corresponding amount minted or transferred to the fee receiver.
+
+---
+
+## 7. Section B: NAV Calculation Methodology
+
+Net Asset Value (NAV) is the cornerstone of RWA backing. The `NAVOracle` contract aggregates valuation inputs and enforces staleness circuit breakers to prevent stale or manipulated pricing.
+
+### 7.1 Multi-source Price Aggregation & Valuation Registry
+The `NAVOracle` supports weighted blending of four core valuation inputs defined in `ValuationMethod`:
+- `FULL_APPRAISAL`: Third-party physical appraisal (highest weight, longest lifespan).
+- `DCF_MODEL`: Discounted cash flow projections.
+- `INCOME_STATEMENT`: Actual net operating income reports.
+- `MARKET_COMPARABLE`: Comparable transactional data.
+
+**Dynamic Category Resolution:**
+To prevent mispricing, asset classes (e.g. `REAL_ESTATE`, `CARBON_CREDITS`) have distinct schedules. If an asset class is not explicitly configured, the `NAVOracle` dynamically resolves the category by querying the `AssetFactory` and checking the associated RWA document verification plugins.
+
+### 7.2 Staleness Circuit Breakers
+Based on the time elapsed since the last NAV update, the asset transitions through four states:
+1.  **FRESH:** Normal operations allowed.
+2.  **WARNING:** Normal operations allowed; platform logs alert.
+3.  **CRITICAL:** Deposits are restricted to protect incoming capital; redemptions remain open.
+4.  **STALE:** Trading and vault actions are completely halted. The oracle triggers an emergency circuit breaker that pauses the contract.
+
+### 7.3 Stake-based Dispute Resolution & Slashing Rules
+To ensure decentralized consensus and data integrity:
+1.  **Challenging NAV:** Anyone can file a challenge against a submitted NAV by locking a `challengeStakeAmount` in USDC.
+2.  **Dispute Window:** Resolvers have a `CHALLENGE_DEADLINE` (default: 7 days) to evaluate the challenge and evidence signatures.
+3.  **Resolution Outcomes:**
+    - **Challenger Wins:** The challenger's stake is refunded in full, the incorrect NAV is updated, and the submitter is penalized.
+    - **Submitter Wins:** The challenger's stake is slashed and transferred to the `insuranceReserve` or `protocolTreasury`.
+    - **Dispute Timeout:** If no resolution is submitted before the deadline, the dispute expires and the stake is returned to the challenger.
+
+---
+
+## 8. Institutional Reality Checks & Gap Analysis
 
 1.  **Regulatory Role Accountability:** The regulator roles in `AssetToken.sol` (e.g. `forceTransfer` capability) must be mapped to multi-sig addresses managed by designated legal compliance entities, rather than a single admin private key.
 2.  **Sanctions Oracle Integration:** While `IdentityRegistry` enforces static KYC check dates, a live compliance integration requires a continuous sanctions scanner oracle (e.g. Chainlink/Sumsub integration) to dynamically trigger address freezing on-chain.
@@ -304,11 +378,11 @@ To enable retail investors holding standard assets (USDC/USDT) in non-custodial 
 
 ---
 
-## 7. Appendix: Core Smart Contract Code Snippets
+## 9. Appendix: Core Smart Contract Code Snippets
 
 This appendix contains high-fidelity code snippets focusing on the core business logic, regulatory rules, and state transitions of the CRATS Protocol. Standard imports, boilerplate getters, and events have been omitted for clarity.
 
-### 7.1 Layer 1: Identity & Compliance (Gatekeeping)
+### 9.1 Layer 1: Identity & Compliance (Gatekeeping)
 
 #### `IdentityRegistry.sol` (KYC & Role Registration)
 ```solidity
@@ -356,7 +430,7 @@ function _update(address to, uint256 tokenId, address auth)
 }
 ```
 
-### 7.2 Layer 2: Asset Management & RWA Plugins
+### 9.2 Layer 2: Asset Management & RWA Plugins
 
 #### `AssetToken.sol` (Force Transfer / Regulatory Clawback)
 ```solidity
@@ -408,44 +482,7 @@ function validateDocuments(
 }
 ```
 
-#### `CarbonCreditPlugin.sol` (Carbon Credit Verification Rule)
-```solidity
-// Ensures verification report document is provided for carbon credit assets
-function validateDocuments(
-    AssetDocument[] calldata docs
-) external pure override returns (bool) {
-    bool hasReport = false;
-
-    for (uint256 i = 0; i < docs.length; i++) {
-        if (keccak256(bytes(docs[i].docType)) == keccak256("VERIFICATION_REPORT")) hasReport = true;
-    }
-
-    require(hasReport, "CarbonCredit: Verification Report required");
-    return true;
-}
-```
-
-#### `FineArtPlugin.sol` (Fine Art Authentication & Insurance Rules)
-```solidity
-// Ensures fine art assets have authenticity certifications and active insurance documents
-function validateDocuments(
-    AssetDocument[] calldata docs
-) external pure override returns (bool) {
-    bool hasAuth = false;
-    bool hasInsurance = false;
-
-    for (uint256 i = 0; i < docs.length; i++) {
-        if (keccak256(bytes(docs[i].docType)) == keccak256("AUTHENTICATION")) hasAuth = true;
-        if (keccak256(bytes(docs[i].docType)) == keccak256("INSURANCE")) hasInsurance = true;
-    }
-
-    require(hasAuth, "FineArt: Authentication required");
-    require(hasInsurance, "FineArt: Insurance required");
-    return true;
-}
-```
-
-### 7.3 Layer 3: Financial Layer & Vault Share Minting
+### 9.3 Layer 3: Financial Layer & Vault Share Minting (Sync/Async Vaults)
 
 #### `SyncVault.sol` (Synchronous Compliance Gated Deposits & Minting)
 ```solidity
@@ -459,24 +496,9 @@ function deposit(uint256 assets, address receiver)
     _checkCompliance(msg.sender);
     return super.deposit(assets, receiver);
 }
-
-function mint(uint256 shares, address receiver) 
-    public 
-    override(ERC4626Upgradeable, ISyncVault) 
-    nonReentrant 
-    returns (uint256) 
-{
-    _checkCompliance(msg.sender);
-    return super.mint(shares, receiver);
-}
-
-function _checkCompliance(address account) internal view {
-    if (identityRegistry == address(0)) return;
-    require(IIdentityRegistry(identityRegistry).isVerified(account), "SyncVault: Account not verified");
-}
 ```
 
-#### `AsyncVault.sol` (Asynchronous Share Minting Request & Execution - ERC-7540)
+#### `AsyncVault.sol` (Asynchronous ERC-7540 Request & Execution Loops)
 ```solidity
 // Submits a deposit request and logs the pending position to the Beneficial Owner Registry
 function requestDeposit(uint256 assets, address controller, address owner) 
@@ -485,6 +507,7 @@ function requestDeposit(uint256 assets, address controller, address owner)
     nonReentrant 
     returns (uint256 requestId) 
 {
+    require(assets > 0, "ZERO_ASSETS");
     require(owner == msg.sender || isOperator(owner, msg.sender), "unauthorized");
     IERC20(asset()).safeTransferFrom(owner, address(this), assets);
     _pendingDeposit[controller] += assets;
@@ -492,13 +515,38 @@ function requestDeposit(uint256 assets, address controller, address owner)
     requestId = _nextDepositRequestId[controller]++;
     
     // BOR sync: reflect pending position
-    assetRegistry.syncOwner(asset(), controller, balanceOf(controller) + convertToShares(assets));
+    if (address(assetRegistry) != address(0)) {
+        assetRegistry.syncOwner(asset(), controller, balanceOf(controller) + convertToShares(assets));
+    }
     
     emit DepositRequest(controller, owner, requestId, msg.sender, assets);
     return requestId;
 }
 
-// Fulfills the deposit after compliance/settlement checks, minting shares to the vault escrow
+// Submits a redemption request, transferring shares to vault escrow
+function requestRedeem(uint256 shares, address controller, address owner) 
+    external 
+    override 
+    nonReentrant 
+    returns (uint256 requestId) 
+{
+    require(shares > 0, "ZERO_SHARES");
+    require(owner == msg.sender || isOperator(owner, msg.sender), "unauthorized");
+    _transfer(owner, address(this), shares);
+    _pendingRedeem[controller] += shares;
+    _totalPendingRedeemShares += shares;
+    requestId = _nextRedeemRequestId[controller]++;
+    
+    // BOR sync: reflect reduction (balance already reduced by _transfer, hook auto-syncs owner)
+    if (address(assetRegistry) != address(0)) {
+        assetRegistry.syncOwner(asset(), owner, balanceOf(owner));
+    }
+    
+    emit RedeemRequest(controller, owner, requestId, msg.sender, shares);
+    return requestId;
+}
+
+// Fulfills the deposit, minting claimable shares to vault escrow
 function fulfillDeposit(address controller, uint256 assets) external onlyRole(FULFILLER_ROLE) {
     uint256 shares = convertToShares(assets);
     _mint(address(this), shares);
@@ -508,20 +556,13 @@ function fulfillDeposit(address controller, uint256 assets) external onlyRole(FU
     _totalPendingDepositAssets -= assets;
 }
 
-// Allows the receiver to claim their finalized vault shares (minting completes)
-function deposit(uint256 assets, address receiver, address controller) 
-    public 
-    override(IERC7540) 
-    nonReentrant 
-    returns (uint256 shares) 
-{
-    require(controller == msg.sender || isOperator(controller, msg.sender), "unauthorized");
-    InternalClaim storage cl = _claimableDeposit[controller];
-    require(cl.assets >= assets, "insufficient claimable assets");
-    shares = assets.mulDiv(cl.shares, cl.assets, Math.Rounding.Floor);
-    cl.assets -= assets; cl.shares -= shares;
-    _transfer(address(this), receiver, shares);
-    emit Deposit(msg.sender, receiver, assets, shares);
+// Fulfills the redemption, making assets claimable
+function fulfillRedeem(address controller, uint256 shares) external onlyRole(FULFILLER_ROLE) {
+    uint256 assets = convertToAssets(shares);
+    _claimableRedeem[controller].shares += shares;
+    _claimableRedeem[controller].assets += assets;
+    _pendingRedeem[controller] -= shares;
+    _totalPendingRedeemShares -= shares;
 }
 ```
 
@@ -545,21 +586,80 @@ function _update(
         try assetRegistry.syncOwner(assetToken, to, balanceOf(to)) {} catch {}
     }
 }
+```
 
-// Triggers batch updates to the AssetRegistry or falls back to off-chain reconciliation
-function _afterYieldDistribution() internal virtual {
-    uint256 holderCount = _getHolderCount();
+### 9.4 Layer 3 Financials: FeeEngine & NAVOracle
 
-    if (holderCount <= 200) {
-        (address[] memory holders, uint256[] memory shares) = _getAllHolders();
-        assetRegistry.syncOwnerBatch(assetToken, holders, shares);
-    } else {
-        emit YieldSyncRequired(assetToken, address(this), totalAssets(), block.timestamp);
-    }
+#### `FeeEngine.sol` (Accruals, Checkpoints & HWM calculations)
+```solidity
+// Calculates the accrued management fee over the elapsed time interval
+function accruedManagementFee(address vault) public view returns (uint256) {
+    FeeConfig storage config = feeConfigs[vault];
+    if (config.managementFeeBps == 0) return 0;
+    
+    uint256 lastAccrued = lastAccrualTimestamp[vault];
+    if (lastAccrued >= block.timestamp) return 0;
+
+    uint256 elapsed = block.timestamp - lastAccrued;
+    uint256 aum = IERC4626(vault).totalAssets();
+    
+    return (aum * config.managementFeeBps * elapsed) / (BPS_DENOMINATOR * SECONDS_IN_YEAR);
+}
+
+// Calculates performance fee against the high water mark (HWM)
+function calculatePerformanceFee(
+    address vault,
+    uint256 currentNAVPerShare,
+    uint256 totalShares
+) external view returns (uint256) {
+    FeeConfig storage config = feeConfigs[vault];
+    if (config.performanceFeeBps == 0) return 0;
+
+    HWMRecord storage hwmRecord = hwmRecords[vault];
+    if (currentNAVPerShare <= hwmRecord.highWaterMarkNAV) return 0;
+
+    uint256 profitPerShare = currentNAVPerShare - hwmRecord.highWaterMarkNAV;
+    uint256 totalProfit = (profitPerShare * totalShares) / 1e18;
+
+    return (totalProfit * config.performanceFeeBps) / BPS_DENOMINATOR;
 }
 ```
 
-### 7.4 Layer 4: Marketplace & Secondary Settlement
+#### `NAVOracle.sol` (Multi-Source Weighted NAV Calculation)
+```solidity
+// Computes weighted average NAV per share based on multiple active valuation methods
+function getWeightedNAV(bytes32 assetId) public view returns (uint256) {
+    WeightConfig storage cfg = weightConfigs[assetId];
+    uint256 weightedSum;
+    uint256 totalWeight;
+
+    if (_getSourceAge(assetId, ValuationMethod.FULL_APPRAISAL) <= cfg.appraisalMaxAge) {
+        weightedSum += _getSourceValue(assetId, ValuationMethod.FULL_APPRAISAL) * cfg.appraisalWeight;
+        totalWeight += cfg.appraisalWeight;
+    } else {
+        revert("Appraisal stale - trading halted");
+    }
+
+    uint256 dcfAge = _getSourceAge(assetId, ValuationMethod.DCF_MODEL);
+    if (dcfAge <= cfg.dcfMaxAge) {
+        uint256 w = dcfAge > cfg.dcfMaxAge / 2 ? cfg.dcfWeight / 2 : cfg.dcfWeight;
+        weightedSum += _getSourceValue(assetId, ValuationMethod.DCF_MODEL) * w;
+        totalWeight += w;
+    }
+
+    uint256 incomeAge = _getSourceAge(assetId, ValuationMethod.INCOME_STATEMENT);
+    if (incomeAge <= cfg.incomeMaxAge) {
+        uint256 w = incomeAge > cfg.incomeMaxAge / 2 ? cfg.incomeWeight / 2 : cfg.incomeWeight;
+        weightedSum += _getSourceValue(assetId, ValuationMethod.INCOME_STATEMENT) * w;
+        totalWeight += w;
+    }
+
+    require(totalWeight > 0, "No valid NAV sources");
+    return weightedSum / totalWeight;
+}
+```
+
+### 9.5 Layer 4: Marketplace & Secondary Settlement
 
 #### `SettlementEngine.sol` (Atomic Delivery vs. Payment Swap)
 ```solidity
@@ -592,79 +692,5 @@ function initiateSettlement(
     });
 
     emit SettlementInitiated(settlementId, msg.sender, to, assetToken, paymentToken, assetAmount, paymentAmount);
-}
-
-// Atomically swaps assets and payments from the escrow contract
-function executeSettlement(bytes32 settlementId) external nonReentrant {
-    Settlement storage settlement = settlements[settlementId];
-    require(!settlement.completed && !settlement.cancelled && block.timestamp <= settlement.expiry, "Invalid state");
-
-    IERC20(settlement.assetToken).safeTransferFrom(settlement.from, address(this), settlement.assetAmount);
-    IERC20(settlement.paymentToken).safeTransferFrom(settlement.to, address(this), settlement.paymentAmount);
-
-    IERC20(settlement.assetToken).safeTransfer(settlement.to, settlement.assetAmount);
-    IERC20(settlement.paymentToken).safeTransfer(settlement.from, settlement.paymentAmount);
-
-    settlement.completed = true;
-    emit SettlementCompleted(settlementId);
-}
-```
-
-#### `OrderBookEngine.sol` (Matching Order Fill Execution & Fees)
-```solidity
-// Fills an order against the order book, processing trade execution, compliance, and fee deduction
-function fillOrder(bytes32 orderId, uint256 fillAmount) external nonReentrant {
-    Order storage order = orders[orderId];
-    require(!order.filled && block.timestamp <= order.expiry, "Invalid order state");
-
-    if (address(identityRegistry) != address(0)) {
-        require(identityRegistry.isVerified(msg.sender) && identityRegistry.isVerified(order.trader), "Verification failed");
-    }
-
-    uint256 tradeAmount = fillAmount;
-    uint256 quoteAmount = (tradeAmount * order.price) / 1e18;
-    uint256 fee = (quoteAmount * takerFee) / FEE_DENOMINATOR;
-
-    if (order.isBuy) {
-        IERC20(order.quoteToken).safeTransferFrom(msg.sender, address(this), quoteAmount + fee);
-        IERC20(order.baseToken).safeTransferFrom(order.trader, msg.sender, tradeAmount);
-        IERC20(order.quoteToken).safeTransfer(order.trader, quoteAmount);
-    } else {
-        IERC20(order.baseToken).safeTransferFrom(msg.sender, address(this), tradeAmount);
-        IERC20(order.quoteToken).safeTransferFrom(order.trader, address(this), quoteAmount);
-        IERC20(order.baseToken).safeTransfer(order.trader, tradeAmount);
-        IERC20(order.quoteToken).safeTransfer(msg.sender, quoteAmount - fee);
-    }
-
-    order.filledAmount += tradeAmount;
-    if (order.filledAmount >= order.amount) order.filled = true;
-
-    emit OrderFilled(orderId, msg.sender, tradeAmount, order.price, fee);
-}
-```
-
-#### `PriceOracle.sol` (Weighted Price Aggregation)
-```solidity
-// Blends spot order book pricing, AMM pool pricing, and external NAV updates based on asset liquidity
-function getAggregatedPrice(address asset) 
-    external 
-    view 
-    returns (uint256 price, uint256 confidence, IPriceOracle.PriceSource primarySource) 
-{
-    uint256 marketPrice = _getMarketPrice(asset);
-    uint256 navPrice = _getNAVPrice(asset);
-    uint256 ammPrice = _getAMMPrice(asset);
-    uint256 externalPrice = _getExternalPrice(asset);
-    
-    IPriceOracle.LiquidityState state = _assessLiquidity(asset);
-    
-    if (state == IPriceOracle.LiquidityState.HIGH) {
-        return (marketPrice, 95, IPriceOracle.PriceSource.ORDER_BOOK);
-    } else if (state == IPriceOracle.LiquidityState.MEDIUM) {
-        uint256 blended = (marketPrice * 60 + navPrice * 40) / 100;
-        return (blended, 80, IPriceOracle.PriceSource.BLENDED);
-    } else {
-        return (navPrice, 70, IPriceOracle.PriceSource.NAV_ORACLE);
-    }
 }
 ```

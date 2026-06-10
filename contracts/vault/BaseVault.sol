@@ -45,22 +45,24 @@ abstract contract BaseVault is Initializable, ERC20Upgradeable {
     ) internal virtual override {
         super._update(from, to, value);
 
-        // Sync the sender (if not mint)
-        if (from != address(0) && from != address(1)) {
-            try assetRegistry.syncOwner(
-                assetToken,
-                from,
-                balanceOf(from)
-            ) {} catch {}
-        }
+        if (address(assetRegistry) != address(0)) {
+            // Sync the sender (if not mint)
+            if (from != address(0) && from != address(1)) {
+                try assetRegistry.syncOwner(
+                    assetToken,
+                    from,
+                    balanceOf(from)
+                ) {} catch {}
+            }
 
-        // Sync the receiver (if not burn)
-        if (to != address(0) && to != address(1)) {
-            try assetRegistry.syncOwner(
-                assetToken,
-                to,
-                balanceOf(to)
-            ) {} catch {}
+            // Sync the receiver (if not burn)
+            if (to != address(0) && to != address(1)) {
+                try assetRegistry.syncOwner(
+                    assetToken,
+                    to,
+                    balanceOf(to)
+                ) {} catch {}
+            }
         }
     }
 
@@ -69,18 +71,20 @@ abstract contract BaseVault is Initializable, ERC20Upgradeable {
      * For vaults with > 200 holders, emits an event for off-chain sync.
      */
     function _afterYieldDistribution() internal virtual {
-        uint256 holderCount = _getHolderCount();
+        if (address(assetRegistry) != address(0)) {
+            uint256 holderCount = _getHolderCount();
 
-        if (holderCount <= 200) {
-            (address[] memory holders, uint256[] memory shares) = _getAllHolders();
-            assetRegistry.syncOwnerBatch(assetToken, holders, shares);
-        } else {
-            emit YieldSyncRequired(
-                assetToken,
-                address(this),
-                totalAssets(),
-                block.timestamp
-            );
+            if (holderCount <= 200) {
+                (address[] memory holders, uint256[] memory shares) = _getAllHolders();
+                assetRegistry.syncOwnerBatch(assetToken, holders, shares);
+            } else {
+                emit YieldSyncRequired(
+                    assetToken,
+                    address(this),
+                    totalAssets(),
+                    block.timestamp
+                );
+            }
         }
     }
 

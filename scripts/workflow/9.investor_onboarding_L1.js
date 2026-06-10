@@ -22,6 +22,13 @@ async function main() {
     const didHash = hre.ethers.id(did);
     const expiresAt = Math.floor(Date.now() / 1000) + (365 * 24 * 60 * 60);
 
+    const identitySBT = await hre.ethers.getContractAt("IdentitySBT", deployment.contracts.identitySBT);
+    const existingTokenId = await identitySBT.tokenIdOf(investor.address);
+    if (existingTokenId > 0n && existingTokenId > 0) {
+        console.log(`ℹ️ Investor already registered with Token ID: ${existingTokenId}. Skipping.`);
+        return;
+    }
+
     console.log("Registering identity for investor...");
     const tx = await identityRegistry.registerIdentity(
         investor.address,

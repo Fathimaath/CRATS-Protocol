@@ -31,18 +31,40 @@ async function main() {
         }
     ];
 
-    console.log("Registering documents for Azure Manor...");
-    const tx = await assetRegistry.connect(issuer).registerDocuments(
-        deployment.contracts.azureToken,
-        documents
-    );
-    const receipt = await tx.wait();
+    console.log("Registering and verifying documents for Azure Manor...");
+    let lastReceipt;
+    for (const doc of documents) {
+        let exists = false;
+        try {
+            await assetRegistry.getDocument(doc.docHash);
+            exists = true;
+        } catch (e) {
+            // Not found, proceed with upload
+        }
 
-    console.log("✅ Documents registered successfully.");
+        if (exists) {
+            console.log(` ℹ️ Document ${doc.docType} already registered. Skipping.`);
+            continue;
+        }
+
+        console.log(` - Uploading ${doc.docType} (${doc.docHash})...`);
+        const tx = await assetRegistry.connect(deployer).uploadDocument(
+            doc.docHash,
+            doc.docType,
+            "0x"
+        );
+        lastReceipt = await tx.wait();
+
+        console.log(` - Verifying ${doc.docType}...`);
+        const verifyTx = await assetRegistry.connect(deployer).verifyDocument(doc.docHash);
+        await verifyTx.wait();
+    }
+
+    console.log("✅ Documents registered and verified successfully.");
 
     await saveWorkflowResult(5, {
         name: "Asset Document Registry",
-        txHash: receipt.hash || tx.hash,
+        txHash: lastReceipt ? lastReceipt.hash : "0x0000000000000000000000000000000000000000000000000000000000000000",
         contract: deployment.contracts.azureToken,
         details: `Registered: PropTitle.pdf, Appr.pdf`,
         layer: "L2"

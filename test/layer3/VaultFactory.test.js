@@ -29,22 +29,12 @@ describe("Layer 3 - VaultFactory", function () {
 
     // Deploy SyncVault template
     const SyncVault = await ethers.getContractFactory("SyncVault");
-    syncVaultTemplate = await SyncVault.deploy(
-      await mockAsset.getAddress(),
-      "Sync Vault Template",
-      "sVT",
-      admin.address
-    );
+    syncVaultTemplate = await SyncVault.deploy();
     await syncVaultTemplate.waitForDeployment();
 
     // Deploy AsyncVault template
     const AsyncVault = await ethers.getContractFactory("AsyncVault");
-    asyncVaultTemplate = await AsyncVault.deploy(
-      await mockAsset.getAddress(),
-      "Async Vault Template",
-      "aVT",
-      admin.address
-    );
+    asyncVaultTemplate = await AsyncVault.deploy();
     await asyncVaultTemplate.waitForDeployment();
 
     // Deploy VaultFactory

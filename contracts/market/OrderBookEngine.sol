@@ -109,7 +109,7 @@ contract OrderBookEngine is ReentrancyGuard, Ownable {
         bool isBuy,
         uint256 expiry
     ) external nonReentrant returns (bytes32 orderId) {
-        return placeOrderWithType(
+        return _placeOrderWithType(
             baseToken,
             quoteToken,
             amount,
@@ -132,6 +132,28 @@ contract OrderBookEngine is ReentrancyGuard, Ownable {
         uint256 expiry,
         uint256 stopPrice
     ) public nonReentrant returns (bytes32 orderId) {
+        return _placeOrderWithType(
+            baseToken,
+            quoteToken,
+            amount,
+            price,
+            isBuy,
+            orderType,
+            expiry,
+            stopPrice
+        );
+    }
+
+    function _placeOrderWithType(
+        address baseToken,
+        address quoteToken,
+        uint256 amount,
+        uint256 price,
+        bool isBuy,
+        OrderType orderType,
+        uint256 expiry,
+        uint256 stopPrice
+    ) internal returns (bytes32 orderId) {
         // Standard checks (audited pattern)
         require(!tradingHalted[baseToken], "Trading halted");
         require(!tradingHalted[quoteToken], "Trading halted");
@@ -197,7 +219,7 @@ contract OrderBookEngine is ReentrancyGuard, Ownable {
         uint256 amount,
         bool isBuy
     ) external returns (bytes32 orderId) {
-        return placeOrderWithType(
+        return _placeOrderWithType(
             baseToken,
             quoteToken,
             amount,
@@ -217,7 +239,7 @@ contract OrderBookEngine is ReentrancyGuard, Ownable {
         uint256 stopPrice,
         bool isBuy
     ) external returns (bytes32 orderId) {
-        return placeOrderWithType(
+        return _placeOrderWithType(
             baseToken,
             quoteToken,
             amount,
@@ -239,7 +261,7 @@ contract OrderBookEngine is ReentrancyGuard, Ownable {
         bool isBuy,
         uint256 expiry
     ) external returns (bytes32 orderId) {
-        return placeOrderWithType(
+        return _placeOrderWithType(
             baseToken,
             quoteToken,
             amount,
@@ -259,7 +281,7 @@ contract OrderBookEngine is ReentrancyGuard, Ownable {
         uint256 price,
         bool isBuy
     ) external returns (bytes32 orderId) {
-        orderId = placeOrderWithType(
+        orderId = _placeOrderWithType(
             baseToken,
             quoteToken,
             amount,
@@ -289,7 +311,7 @@ contract OrderBookEngine is ReentrancyGuard, Ownable {
         uint256 price,
         bool isBuy
     ) external returns (bytes32 orderId) {
-        orderId = placeOrderWithType(
+        orderId = _placeOrderWithType(
             baseToken,
             quoteToken,
             amount,
@@ -317,7 +339,7 @@ contract OrderBookEngine is ReentrancyGuard, Ownable {
         require(visibleAmount > 0 && visibleAmount <= totalAmount, "Invalid visible amount");
         require(totalAmount > visibleAmount, "Total must exceed visible");
 
-        orderId = placeOrderWithType(
+        orderId = _placeOrderWithType(
             baseToken,
             quoteToken,
             totalAmount,
@@ -344,7 +366,7 @@ contract OrderBookEngine is ReentrancyGuard, Ownable {
         require(expiryTimestamp > block.timestamp, "Invalid expiry");
         require(expiryTimestamp <= block.timestamp + 90 days, "Expiry too far");
 
-        orderId = placeOrderWithType(
+        orderId = _placeOrderWithType(
             baseToken,
             quoteToken,
             amount,
@@ -385,18 +407,21 @@ contract OrderBookEngine is ReentrancyGuard, Ownable {
 
         // Execute DvP settlement (standard atomic swap pattern)
         if (order.isBuy) {
-            // Buyer is order placer, seller is filler
-            uint256 paymentAmount = quoteAmount + fee;
-            IERC20(order.quoteToken).safeTransferFrom(msg.sender, address(this), paymentAmount);
-            IERC20(order.baseToken).safeTransferFrom(order.trader, msg.sender, tradeAmount);
-            IERC20(order.quoteToken).safeTransfer(order.trader, quoteAmount);
-        } else {
-            // Seller is order placer, buyer is filler
-            uint256 paymentAmount = quoteAmount - fee;
-            IERC20(order.baseToken).safeTransferFrom(msg.sender, address(this), tradeAmount);
+            // Buyer is order placer (order.trader), seller is filler (msg.sender)
+            // Buyer pays quoteAmount
             IERC20(order.quoteToken).safeTransferFrom(order.trader, address(this), quoteAmount);
-            IERC20(order.baseToken).safeTransfer(order.trader, tradeAmount);
-            IERC20(order.quoteToken).safeTransfer(msg.sender, paymentAmount);
+            // Seller transfers baseToken to buyer
+            IERC20(order.baseToken).safeTransferFrom(msg.sender, order.trader, tradeAmount);
+            // Seller receives quoteAmount minus taker fee (as taker)
+            IERC20(order.quoteToken).safeTransfer(msg.sender, quoteAmount - fee);
+        } else {
+            // Seller is order placer (order.trader), buyer is filler (msg.sender)
+            // Buyer pays quoteAmount plus taker fee (as taker)
+            IERC20(order.quoteToken).safeTransferFrom(msg.sender, address(this), quoteAmount + fee);
+            // Seller transfers baseToken to buyer
+            IERC20(order.baseToken).safeTransferFrom(order.trader, msg.sender, tradeAmount);
+            // Seller receives quoteAmount
+            IERC20(order.quoteToken).safeTransfer(order.trader, quoteAmount);
         }
 
         // Update order state (standard pattern)

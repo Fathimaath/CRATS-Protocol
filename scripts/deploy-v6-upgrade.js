@@ -22,12 +22,63 @@ async function main() {
   const gasPrice = hre.ethers.parseUnits("10", "gwei");
   const txOverrides = { gasPrice };
 
+  // ── 0. RESOLVE USDC and Timelock ───────────────────────────
+  let usdcAddress = deployed.usdc;
+  let timelockAddress = deployed.timelock;
+
+  if (!usdcAddress || !timelockAddress) {
+    if (network === "hardhat" || network === "localhost") {
+      if (!usdcAddress) {
+        console.log("\n>>> Deploying Mock USDC for local network...");
+        const MockERC20 = await hre.ethers.getContractFactory("MockERC20");
+        const usdc = await MockERC20.deploy("Mock USDC", "USDC", txOverrides);
+        await usdc.waitForDeployment();
+        usdcAddress = await usdc.getAddress();
+        deployed.usdc = usdcAddress;
+        console.log("  Mock USDC:", usdcAddress);
+      }
+      if (!timelockAddress) {
+        console.log("\n>>> Deploying Mock Timelock for local network...");
+        const MockTimelock = await hre.ethers.getContractFactory("MockTimelock");
+        const timelock = await MockTimelock.deploy(
+          0, // minDelay
+          [deployer.address], // proposers
+          [deployer.address], // executors
+          deployer.address, // admin
+          txOverrides
+        );
+        await timelock.waitForDeployment();
+        timelockAddress = await timelock.getAddress();
+        deployed.timelock = timelockAddress;
+        console.log("  Mock Timelock:", timelockAddress);
+      }
+      save();
+    } else {
+      // For public networks, look in process.env or fail
+      usdcAddress = usdcAddress || process.env.USDC_ADDRESS;
+      timelockAddress = timelockAddress || process.env.TIMELOCK_ADDRESS;
+
+      if (!usdcAddress || !timelockAddress) {
+        throw new Error(
+          `Production-ready deployment requires USDC and Timelock addresses. ` +
+          `Please set USDC_ADDRESS and TIMELOCK_ADDRESS environment variables, ` +
+          `or define "usdc" and "timelock" in ${path.basename(deploymentFile)}.`
+        );
+      }
+      deployed.usdc = usdcAddress;
+      deployed.timelock = timelockAddress;
+      save();
+    }
+  }
+
   // ── 1. NEW: FeeEngine ──────────────────────────────────────
   console.log("\n>>> Deploying FeeEngine...");
   const FeeEngine = await hre.ethers.getContractFactory("FeeEngine");
-  const feeEngine = await hre.upgrades.deployProxy(FeeEngine, [deployer.address], {
-    kind: "uups", txOverrides
-  });
+  const feeEngine = await hre.upgrades.deployProxy(
+    FeeEngine, 
+    [timelockAddress, usdcAddress, deployer.address], 
+    { kind: "uups", txOverrides }
+  );
   await feeEngine.waitForDeployment();
   deployed.feeEngine = await feeEngine.getAddress();
   console.log("  FeeEngine:", deployed.feeEngine);
@@ -36,9 +87,11 @@ async function main() {
   // ── 2. NEW: NAVOracle ──────────────────────────────────────
   console.log("\n>>> Deploying NAVOracle...");
   const NAVOracle = await hre.ethers.getContractFactory("NAVOracle");
-  const navOracle = await hre.upgrades.deployProxy(NAVOracle, [deployed.feeEngine, deployer.address], {
-    kind: "uups", txOverrides
-  });
+  const navOracle = await hre.upgrades.deployProxy(
+    NAVOracle, 
+    [deployed.feeEngine, deployer.address], 
+    { kind: "uups", txOverrides }
+  );
   await navOracle.waitForDeployment();
   deployed.navOracle = await navOracle.getAddress();
   console.log("  NAVOracle:", deployed.navOracle);
@@ -118,10 +171,19 @@ async function main() {
   await (await registry.setFeeEngine(deployed.feeEngine, txOverrides)).wait();
   console.log("  AssetRegistry.feeEngine =", deployed.feeEngine);
 
-  const compliance = await hre.ethers.getContractAt("Compliance", deployed.complianceModule);
   const settlementEngine = await hre.ethers.getContractAt("SettlementEngine", deployed.settlementEngine);
   await (await settlementEngine.setFeeEngine(deployed.feeEngine, txOverrides)).wait();
   console.log("  SettlementEngine.feeEngine =", deployed.feeEngine);
+
+  const navOracleContract = await hre.ethers.getContractAt("NAVOracle", deployed.navOracle);
+  await (await navOracleContract.setUSDC(usdcAddress, txOverrides)).wait();
+  console.log("  NAVOracle.usdc =", usdcAddress);
+  await (await navOracleContract.setAssetFactory(deployed.assetFactory, txOverrides)).wait();
+  console.log("  NAVOracle.assetFactory =", deployed.assetFactory);
+
+  const priceOracleContract = await hre.ethers.getContractAt("PriceOracle", deployed.priceOracle);
+  await (await priceOracleContract.setNavOracle(deployed.navOracle, txOverrides)).wait();
+  console.log("  PriceOracle.navOracle =", deployed.navOracle);
 
   console.log("\n✅ v6.0.0 upgrade complete!");
   console.log("Final deployment file:", path.basename(deploymentFile));

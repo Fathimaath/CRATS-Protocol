@@ -276,8 +276,11 @@ contract YieldDistributor is AccessControl, ReentrancyGuard {
             schedule.nextDue = block.timestamp + schedule.frequency;
         }
 
-        // Transfer yield tokens to vault
-        schedule.yieldToken.safeTransferFrom(msg.sender, vault, amount);
+        // Transfer yield tokens to YieldDistributor first
+        schedule.yieldToken.safeTransferFrom(msg.sender, address(this), amount);
+
+        // Approve vault to pull tokens
+        schedule.yieldToken.approve(vault, amount);
 
         // Call vault's distributeYield function
         (bool success, ) = vault.call(

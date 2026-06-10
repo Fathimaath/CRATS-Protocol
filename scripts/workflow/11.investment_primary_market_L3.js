@@ -21,15 +21,22 @@ async function main() {
     // Amount to invest: $10,000 (10k tokens)
     const amount = hre.ethers.parseEther("10000");
 
-    console.log("Simulating Backend Process:");
-    console.log(" 1. Transferring AZURE from Treasury to Vault...");
-    const transferTx = await azureToken.connect(treasury).transfer(deployment.contracts.azureVault, amount);
-    await transferTx.wait();
+    const usdc = await hre.ethers.getContractAt("MockERC20", deployment.contracts.usdc);
 
-    console.log(" 2. Minting Shares (vAZURE) to Investor...");
-    // Direct deposit simulation: In a real scenario, the investor deposits USDC 
-    // and the backend converts it. Here we simulate the final share minting.
-    const depositTx = await azureVault.connect(investor).deposit(amount, investor.address);
+    console.log("Simulating Primary Market Flow:");
+    console.log(" 1. Minting USDC to Investor...");
+    await (await usdc.connect(investor).mint(investor.address, amount)).wait();
+
+    console.log(" 2. Investor transferring USDC to Treasury...");
+    const payTx = await usdc.connect(investor).transfer(treasury.address, amount);
+    await payTx.wait();
+
+    console.log(" 3. Treasury approving Vault to spend AZURE...");
+    const approveTx = await azureToken.connect(treasury).approve(deployment.contracts.azureVault, amount);
+    await approveTx.wait();
+
+    console.log(" 4. Treasury depositing AZURE into Vault to mint Shares (vAZURE) directly to Investor wallet...");
+    const depositTx = await azureVault.connect(treasury).deposit(amount, investor.address);
     await depositTx.wait();
 
     const shares = await azureVault.balanceOf(investor.address);
@@ -37,7 +44,7 @@ async function main() {
 
     await saveWorkflowResult(11, {
         name: "Investment (Primary)",
-        txHash: depositTx.hash || transferTx.hash,
+        txHash: depositTx.hash || payTx.hash,
         contract: deployment.contracts.azureVault,
         details: `Investor deposited 10k AZURE for vAZURE shares`,
         layer: "L3"

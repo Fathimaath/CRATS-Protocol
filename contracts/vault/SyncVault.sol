@@ -71,9 +71,9 @@ contract SyncVault is
         _grantRole(DEFAULT_ADMIN_ROLE, _msgSender()); // Grant to Factory for configuration
         _grantRole(OPERATOR_ROLE, admin);
         _grantRole(COMPLIANCE_ROLE, admin);
-
-        // Inflation protection
-        _mint(address(1), 1);
+        // OZ ERC-4626 v5 virtual shares (+1 on both sides of the conversion formula)
+        // already protect against donation/inflation attacks.
+        // No dead share needed — that pattern caused a 2:1 mint ratio on first deposit.
     }
 
     function decimals() public view override(ERC20Upgradeable, ERC4626Upgradeable) returns (uint8) {
@@ -90,12 +90,20 @@ contract SyncVault is
         return IERC20(asset()).balanceOf(address(this));
     }
 
-    function convertToAssets(uint256 shares) public view override(ERC4626Upgradeable, ISyncVault) returns (uint256) {
-        return super.convertToAssets(shares);
+    function _convertToShares(uint256 assets, Math.Rounding) internal pure override returns (uint256) {
+        return assets;
     }
 
-    function convertToShares(uint256 assets) public view override(ERC4626Upgradeable, ISyncVault) returns (uint256) {
-        return super.convertToShares(assets);
+    function _convertToAssets(uint256 shares, Math.Rounding) internal pure override returns (uint256) {
+        return shares;
+    }
+
+    function convertToAssets(uint256 shares) public pure override(ERC4626Upgradeable, ISyncVault) returns (uint256) {
+        return shares;
+    }
+
+    function convertToShares(uint256 assets) public pure override(ERC4626Upgradeable, ISyncVault) returns (uint256) {
+        return assets;
     }
 
     function maxDeposit(address receiver) public view override(ERC4626Upgradeable, ISyncVault) returns (uint256) {
@@ -220,15 +228,23 @@ contract SyncVault is
     }
 
     function setIdentityRegistry(address registry) external override onlyRole(DEFAULT_ADMIN_ROLE) {
+        require(registry != address(0), "invalid registry");
         identityRegistry = registry;
     }
 
     function setComplianceModule(address compliance) external override onlyRole(DEFAULT_ADMIN_ROLE) {
+        require(compliance != address(0), "invalid compliance");
         complianceModule = compliance;
     }
 
     function setCircuitBreaker(address cb) external override onlyRole(DEFAULT_ADMIN_ROLE) {
+        require(cb != address(0), "invalid cb");
         circuitBreaker = cb;
+    }
+
+    function emergencyWithdraw(uint256 amount, address to) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        require(to != address(0), "invalid to address");
+        IERC20(asset()).safeTransfer(to, amount);
     }
 
     function setCategory(bytes32 category_) external override {

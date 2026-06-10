@@ -4,6 +4,10 @@ const { ethers } = require("hardhat");
 describe("Layer 2 - Plugins", function () {
   let realEstatePlugin, fineArtPlugin, carbonCreditPlugin;
 
+  const CATEGORY_REAL_ESTATE = ethers.keccak256(ethers.toUtf8Bytes("REAL_ESTATE"));
+  const CATEGORY_FINE_ART = ethers.keccak256(ethers.toUtf8Bytes("FINE_ART"));
+  const CATEGORY_CARBON_CREDIT = ethers.keccak256(ethers.toUtf8Bytes("CARBON_CREDIT"));
+
   beforeEach(async function () {
     const RealEstatePlugin = await ethers.getContractFactory("RealEstatePlugin");
     realEstatePlugin = await RealEstatePlugin.deploy();
@@ -22,7 +26,7 @@ describe("Layer 2 - Plugins", function () {
     describe("Identification", function () {
       it("Should return category ID", async function () {
         const categoryId = await realEstatePlugin.getCategoryId();
-        expect(categoryId).to.equal(ethers.keccak256(ethers.toUtf8Bytes("REAL_ESTATE")));
+        expect(categoryId).to.equal(CATEGORY_REAL_ESTATE);
       });
 
       it("Should return category name", async function () {
@@ -75,7 +79,7 @@ describe("Layer 2 - Plugins", function () {
           name: "Test Property",
           symbol: "TPROP",
           initialSupply: ethers.parseEther("1000000"),
-          categoryId: "REAL_ESTATE"
+          categoryId: CATEGORY_REAL_ESTATE
         };
         
         const result = await realEstatePlugin.validateCreation.staticCall(
@@ -90,7 +94,7 @@ describe("Layer 2 - Plugins", function () {
           name: "",
           symbol: "TPROP",
           initialSupply: ethers.parseEther("1000000"),
-          categoryId: "REAL_ESTATE"
+          categoryId: CATEGORY_REAL_ESTATE
         };
         
         await expect(
@@ -103,7 +107,7 @@ describe("Layer 2 - Plugins", function () {
           name: "Test Property",
           symbol: "",
           initialSupply: ethers.parseEther("1000000"),
-          categoryId: "REAL_ESTATE"
+          categoryId: CATEGORY_REAL_ESTATE
         };
         
         await expect(
@@ -116,7 +120,7 @@ describe("Layer 2 - Plugins", function () {
           name: "Test Property",
           symbol: "TPROP",
           initialSupply: 0,
-          categoryId: "REAL_ESTATE"
+          categoryId: CATEGORY_REAL_ESTATE
         };
         
         await expect(
@@ -129,7 +133,7 @@ describe("Layer 2 - Plugins", function () {
           name: "Test Property",
           symbol: "TPROP",
           initialSupply: ethers.parseEther("1000000"),
-          categoryId: "FINE_ART"
+          categoryId: CATEGORY_FINE_ART
         };
         
         await expect(
@@ -143,7 +147,7 @@ describe("Layer 2 - Plugins", function () {
     describe("Identification", function () {
       it("Should return category ID", async function () {
         const categoryId = await fineArtPlugin.getCategoryId();
-        expect(categoryId).to.equal(ethers.keccak256(ethers.toUtf8Bytes("FINE_ART")));
+        expect(categoryId).to.equal(CATEGORY_FINE_ART);
       });
 
       it("Should return category name", async function () {
@@ -196,7 +200,7 @@ describe("Layer 2 - Plugins", function () {
           name: "Monet Painting",
           symbol: "MONET",
           initialSupply: ethers.parseEther("1000"),
-          categoryId: "FINE_ART"
+          categoryId: CATEGORY_FINE_ART
         };
         
         const result = await fineArtPlugin.validateCreation.staticCall(
@@ -211,7 +215,7 @@ describe("Layer 2 - Plugins", function () {
           name: "Monet Painting",
           symbol: "MONET",
           initialSupply: 0,
-          categoryId: "FINE_ART"
+          categoryId: CATEGORY_FINE_ART
         };
         
         await expect(
@@ -224,7 +228,7 @@ describe("Layer 2 - Plugins", function () {
           name: "Monet Painting",
           symbol: "MONET",
           initialSupply: ethers.parseEther("1000"),
-          categoryId: "REAL_ESTATE"
+          categoryId: CATEGORY_REAL_ESTATE
         };
         
         await expect(
@@ -238,7 +242,7 @@ describe("Layer 2 - Plugins", function () {
     describe("Identification", function () {
       it("Should return category ID", async function () {
         const categoryId = await carbonCreditPlugin.getCategoryId();
-        expect(categoryId).to.equal(ethers.keccak256(ethers.toUtf8Bytes("CARBON_CREDIT")));
+        expect(categoryId).to.equal(CATEGORY_CARBON_CREDIT);
       });
 
       it("Should return category name", async function () {
@@ -279,7 +283,7 @@ describe("Layer 2 - Plugins", function () {
           name: "Forest Carbon Project",
           symbol: "FOREST",
           initialSupply: ethers.parseEther("100000"),
-          categoryId: "CARBON_CREDIT"
+          categoryId: CATEGORY_CARBON_CREDIT
         };
         
         const result = await carbonCreditPlugin.validateCreation.staticCall(
@@ -294,7 +298,7 @@ describe("Layer 2 - Plugins", function () {
           name: "Forest Carbon Project",
           symbol: "FOREST",
           initialSupply: 0,
-          categoryId: "CARBON_CREDIT"
+          categoryId: CATEGORY_CARBON_CREDIT
         };
         
         await expect(
@@ -307,7 +311,7 @@ describe("Layer 2 - Plugins", function () {
           name: "Forest Carbon Project",
           symbol: "FOREST",
           initialSupply: ethers.parseEther("100000"),
-          categoryId: "REAL_ESTATE"
+          categoryId: CATEGORY_REAL_ESTATE
         };
         
         await expect(

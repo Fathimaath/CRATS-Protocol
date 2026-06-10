@@ -37,15 +37,25 @@ describe("Layer 3 - AsyncVault (ERC-7540)", function () {
     complianceModule = await ComplianceModule.deploy();
     await complianceModule.waitForDeployment();
 
-    // Deploy AsyncVault
+    // Deploy AsyncVault template
     const AsyncVault = await ethers.getContractFactory("AsyncVault");
-    asyncVault = await AsyncVault.deploy(
+    const asyncVaultTemplate = await AsyncVault.deploy();
+    await asyncVaultTemplate.waitForDeployment();
+
+    // Clone template using ERC-1167
+    const cleanAddress = (await asyncVaultTemplate.getAddress()).toLowerCase().replace(/^0x/, "");
+    const initCode = `0x602d8060093d393df3363d3d373d3d3d363d73${cleanAddress}5af43d82803e903d91602b57fd5bf3`;
+    const tx = await admin.sendTransaction({ data: initCode });
+    const receipt = await tx.wait();
+    
+    asyncVault = AsyncVault.attach(receipt.contractAddress);
+    await asyncVault.initialize(
       await mockAsset.getAddress(),
       "Async Vault Token",
       "aVT",
-      admin.address
+      admin.address,
+      ethers.ZeroAddress
     );
-    await asyncVault.waitForDeployment();
 
     // Setup roles
     await asyncVault.grantRole(FULFILLER_ROLE, fulfiller.address);
@@ -330,14 +340,14 @@ describe("Layer 3 - AsyncVault (ERC-7540)", function () {
     it("Should claim shares by burning claimable assets", async function () {
       const sharesBefore = await asyncVault.balanceOf(user1.address);
 
-      await asyncVault.connect(user1).deposit(DEPOSIT_AMOUNT, user1.address, user1.address);
+      await asyncVault.connect(user1)["deposit(uint256,address,address)"](DEPOSIT_AMOUNT, user1.address, user1.address);
 
       const sharesAfter = await asyncVault.balanceOf(user1.address);
       expect(sharesAfter - sharesBefore).to.be.greaterThan(0);
     });
 
     it("Should reduce claimable deposit", async function () {
-      await asyncVault.connect(user1).deposit(DEPOSIT_AMOUNT, user1.address, user1.address);
+      await asyncVault.connect(user1)["deposit(uint256,address,address)"](DEPOSIT_AMOUNT, user1.address, user1.address);
 
       const claimableAssets = await asyncVault.claimableDepositRequest(0, user1.address);
       expect(claimableAssets).to.equal(0);
@@ -345,7 +355,7 @@ describe("Layer 3 - AsyncVault (ERC-7540)", function () {
 
     it("Should emit Deposit event", async function () {
       await expect(
-        asyncVault.connect(user1).deposit(DEPOSIT_AMOUNT, user1.address, user1.address)
+        asyncVault.connect(user1)["deposit(uint256,address,address)"](DEPOSIT_AMOUNT, user1.address, user1.address)
       )
         .to.emit(asyncVault, "Deposit");
     });
@@ -353,47 +363,135 @@ describe("Layer 3 - AsyncVault (ERC-7540)", function () {
     it("Should allow operator to claim on behalf of controller", async function () {
       await asyncVault.connect(user1).setOperator(operator.address, true);
 
-      await asyncVault.connect(operator).deposit(DEPOSIT_AMOUNT, user1.address, user1.address);
+      await asyncVault.connect(operator)["deposit(uint256,address,address)"](DEPOSIT_AMOUNT, user1.address, user1.address);
 
       const shares = await asyncVault.balanceOf(user1.address);
       expect(shares).to.be.greaterThan(0);
     });
 
     it("Should fail if nothing to claim", async function () {
-      await asyncVault.connect(user1).deposit(DEPOSIT_AMOUNT, user1.address, user1.address);
+      await asyncVault.connect(user1)["deposit(uint256,address,address)"](DEPOSIT_AMOUNT, user1.address, user1.address);
 
       await expect(
-        asyncVault.connect(user1).deposit(DEPOSIT_AMOUNT, user1.address, user1.address)
+        asyncVault.connect(user1)["deposit(uint256,address,address)"](DEPOSIT_AMOUNT, user1.address, user1.address)
       ).to.be.reverted;
     });
 
     it("Should fail with zero amount", async function () {
       await expect(
-        asyncVault.connect(user1).deposit(0, user1.address, user1.address)
+        asyncVault.connect(user1)["deposit(uint256,address,address)"](0, user1.address, user1.address)
       ).to.be.revertedWith("Must claim nonzero amount");
     });
   });
 
   describe("Request Redeem", function () {
-    // These tests require the user to have vault shares, but the deposit() claim
-    // function has an issue where shares aren't being minted correctly.
-    // Skipping until the implementation is fixed.
-    it("Should skip - redeem flow requires implementation fix", async function () {
-      this.skip();
+    beforeEach(async function () {
+      await mockAsset.connect(user1).approve(await asyncVault.getAddress(), DEPOSIT_AMOUNT);
+      await asyncVault.connect(user1).requestDeposit(DEPOSIT_AMOUNT, user1.address, user1.address);
+      await asyncVault.connect(fulfiller).fulfillDeposit(user1.address, DEPOSIT_AMOUNT);
+      await asyncVault.connect(user1)["deposit(uint256,address,address)"](DEPOSIT_AMOUNT, user1.address, user1.address);
+    });
+
+    it("Should request redeem and lock shares", async function () {
+      const sharesToRedeem = await asyncVault.balanceOf(user1.address);
+      const vaultSharesBefore = await asyncVault.balanceOf(await asyncVault.getAddress());
+
+      await asyncVault.connect(user1).requestRedeem(sharesToRedeem, user1.address, user1.address);
+
+      const userSharesAfter = await asyncVault.balanceOf(user1.address);
+      const vaultSharesAfter = await asyncVault.balanceOf(await asyncVault.getAddress());
+
+      expect(userSharesAfter).to.equal(0);
+      expect(vaultSharesAfter - vaultSharesBefore).to.equal(sharesToRedeem);
+      
+      const pendingShares = await asyncVault.pendingRedeemRequest(0, user1.address);
+      expect(pendingShares).to.equal(sharesToRedeem);
+    });
+
+    it("Should increment redeem request ID", async function () {
+      const shares = await asyncVault.balanceOf(user1.address);
+      const halfShares = shares / 2n;
+
+      await asyncVault.connect(user1).requestRedeem(halfShares, user1.address, user1.address);
+      expect(await asyncVault.nextRedeemRequestId(user1.address)).to.equal(1);
+
+      await asyncVault.connect(user1).requestRedeem(halfShares, user1.address, user1.address);
+      expect(await asyncVault.nextRedeemRequestId(user1.address)).to.equal(2);
+    });
+
+    it("Should fail with zero shares", async function () {
+      await expect(
+        asyncVault.connect(user1).requestRedeem(0, user1.address, user1.address)
+      ).to.be.revertedWith("ZERO_SHARES");
     });
   });
 
   describe("Fulfill Redeem", function () {
-    // Skip - depends on Request Redeem
-    it("Should skip - redeem flow requires implementation fix", async function () {
-      this.skip();
+    let sharesToRedeem;
+    beforeEach(async function () {
+      await mockAsset.connect(user1).approve(await asyncVault.getAddress(), DEPOSIT_AMOUNT);
+      await asyncVault.connect(user1).requestDeposit(DEPOSIT_AMOUNT, user1.address, user1.address);
+      await asyncVault.connect(fulfiller).fulfillDeposit(user1.address, DEPOSIT_AMOUNT);
+      await asyncVault.connect(user1)["deposit(uint256,address,address)"](DEPOSIT_AMOUNT, user1.address, user1.address);
+
+      sharesToRedeem = await asyncVault.balanceOf(user1.address);
+      await asyncVault.connect(user1).requestRedeem(sharesToRedeem, user1.address, user1.address);
+    });
+
+    it("Should fulfill redeem and make it claimable", async function () {
+      await asyncVault.connect(fulfiller).fulfillRedeem(user1.address, sharesToRedeem);
+
+      const claimableShares = await asyncVault.claimableRedeemRequest(0, user1.address);
+      expect(claimableShares).to.equal(sharesToRedeem);
+
+      const pendingShares = await asyncVault.pendingRedeemRequest(0, user1.address);
+      expect(pendingShares).to.equal(0);
+    });
+
+    it("Should only allow fulfiller to fulfill redeem", async function () {
+      await expect(
+        asyncVault.connect(user1).fulfillRedeem(user1.address, sharesToRedeem)
+      ).to.be.reverted;
     });
   });
 
   describe("Claim Redeem", function () {
-    // Skip - depends on Request Redeem
-    it("Should skip - redeem flow requires implementation fix", async function () {
-      this.skip();
+    let sharesToRedeem;
+    beforeEach(async function () {
+      await mockAsset.connect(user1).approve(await asyncVault.getAddress(), DEPOSIT_AMOUNT);
+      await asyncVault.connect(user1).requestDeposit(DEPOSIT_AMOUNT, user1.address, user1.address);
+      await asyncVault.connect(fulfiller).fulfillDeposit(user1.address, DEPOSIT_AMOUNT);
+      await asyncVault.connect(user1)["deposit(uint256,address,address)"](DEPOSIT_AMOUNT, user1.address, user1.address);
+
+      sharesToRedeem = await asyncVault.balanceOf(user1.address);
+      await asyncVault.connect(user1).requestRedeem(sharesToRedeem, user1.address, user1.address);
+      await asyncVault.connect(fulfiller).fulfillRedeem(user1.address, sharesToRedeem);
+    });
+
+    it("Should claim assets by burning claimable shares", async function () {
+      const userBalanceBefore = await mockAsset.balanceOf(user1.address);
+      
+      await asyncVault.connect(user1).redeem(sharesToRedeem, user1.address, user1.address);
+
+      const userBalanceAfter = await mockAsset.balanceOf(user1.address);
+      expect(userBalanceAfter - userBalanceBefore).to.be.greaterThan(0);
+
+      const claimableShares = await asyncVault.claimableRedeemRequest(0, user1.address);
+      expect(claimableShares).to.equal(0);
+    });
+
+    it("Should fail if nothing to claim", async function () {
+      await asyncVault.connect(user1).redeem(sharesToRedeem, user1.address, user1.address);
+
+      await expect(
+        asyncVault.connect(user1).redeem(sharesToRedeem, user1.address, user1.address)
+      ).to.be.reverted;
+    });
+
+    it("Should fail with zero shares", async function () {
+      await expect(
+        asyncVault.connect(user1).redeem(0, user1.address, user1.address)
+      ).to.be.revertedWith("Must claim nonzero shares");
     });
   });
 
@@ -512,15 +610,39 @@ describe("Layer 3 - AsyncVault (ERC-7540)", function () {
       await asyncVault.connect(fulfiller).fulfillDeposit(user1.address, DEPOSIT_AMOUNT);
 
       // Step 3: Claim shares
-      await asyncVault.connect(user1).deposit(DEPOSIT_AMOUNT, user1.address, user1.address);
+      await asyncVault.connect(user1)["deposit(uint256,address,address)"](DEPOSIT_AMOUNT, user1.address, user1.address);
 
       const shares = await asyncVault.balanceOf(user1.address);
       expect(shares).to.be.greaterThan(0);
     });
 
-    // Skip redeem flow test - requires more complex setup
-    it("Should skip async redeem flow test", async function () {
-      this.skip();
+    it("Should complete full async redeem flow", async function () {
+      // Step 1: User deposits to get shares
+      await mockAsset.connect(user1).approve(await asyncVault.getAddress(), DEPOSIT_AMOUNT);
+      await asyncVault.connect(user1).requestDeposit(
+        DEPOSIT_AMOUNT,
+        user1.address,
+        user1.address
+      );
+      await mockAsset.mint(await asyncVault.getAddress(), DEPOSIT_AMOUNT);
+      await asyncVault.connect(fulfiller).fulfillDeposit(user1.address, DEPOSIT_AMOUNT);
+      await asyncVault.connect(user1)["deposit(uint256,address,address)"](DEPOSIT_AMOUNT, user1.address, user1.address);
+
+      const shares = await asyncVault.balanceOf(user1.address);
+      expect(shares).to.be.greaterThan(0);
+
+      // Step 2: Request redeem
+      await asyncVault.connect(user1).requestRedeem(shares, user1.address, user1.address);
+
+      // Step 3: Fulfill redeem
+      await asyncVault.connect(fulfiller).fulfillRedeem(user1.address, shares);
+
+      // Step 4: Claim assets
+      const balanceBefore = await mockAsset.balanceOf(user1.address);
+      await asyncVault.connect(user1).redeem(shares, user1.address, user1.address);
+      const balanceAfter = await mockAsset.balanceOf(user1.address);
+
+      expect(balanceAfter).to.be.greaterThan(balanceBefore);
     });
   });
 });

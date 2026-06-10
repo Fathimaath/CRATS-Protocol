@@ -36,15 +36,25 @@ describe("Layer 3 - SyncVault (ERC-4626)", function () {
     complianceModule = await ComplianceModule.deploy();
     await complianceModule.waitForDeployment();
 
-    // Deploy SyncVault
+    // Deploy SyncVault template
     const SyncVault = await ethers.getContractFactory("SyncVault");
-    syncVault = await SyncVault.deploy(
+    const syncVaultTemplate = await SyncVault.deploy();
+    await syncVaultTemplate.waitForDeployment();
+
+    // Clone template using ERC-1167
+    const cleanAddress = (await syncVaultTemplate.getAddress()).toLowerCase().replace(/^0x/, "");
+    const initCode = `0x602d8060093d393df3363d3d373d3d3d363d73${cleanAddress}5af43d82803e903d91602b57fd5bf3`;
+    const tx = await admin.sendTransaction({ data: initCode });
+    const receipt = await tx.wait();
+    
+    syncVault = SyncVault.attach(receipt.contractAddress);
+    await syncVault.initialize(
       await mockAsset.getAddress(),
       "Sync Vault Token",
       "sVT",
-      admin.address
+      admin.address,
+      ethers.ZeroAddress
     );
-    await syncVault.waitForDeployment();
 
     // Setup roles
     await syncVault.grantRole(OPERATOR_ROLE, operator.address);
@@ -73,9 +83,9 @@ describe("Layer 3 - SyncVault (ERC-4626)", function () {
       expect(await syncVault.hasRole(OPERATOR_ROLE, admin.address)).to.be.true;
     });
 
-    it("Should mint 1 dead share to address(1) for inflation protection", async function () {
+    it("Should not mint dead shares to address(1) (relying on virtual shares)", async function () {
       const share1 = await syncVault.balanceOf("0x0000000000000000000000000000000000000001");
-      expect(share1).to.equal(1);
+      expect(share1).to.equal(0);
     });
 
     it("Should return version", async function () {
@@ -309,13 +319,22 @@ describe("Layer 3 - SyncVault (ERC-4626)", function () {
       await localAsset.waitForDeployment();
       
       const SyncVault = await ethers.getContractFactory("SyncVault");
-      localVault = await SyncVault.deploy(
+      const localTemplate = await SyncVault.deploy();
+      await localTemplate.waitForDeployment();
+
+      const cleanAddress = (await localTemplate.getAddress()).toLowerCase().replace(/^0x/, "");
+      const initCode = `0x602d8060093d393df3363d3d373d3d3d363d73${cleanAddress}5af43d82803e903d91602b57fd5bf3`;
+      const tx = await admin.sendTransaction({ data: initCode });
+      const receipt = await tx.wait();
+      
+      localVault = SyncVault.attach(receipt.contractAddress);
+      await localVault.initialize(
         await localAsset.getAddress(),
         "Test Sync Vault",
         "tSV",
-        admin.address
+        admin.address,
+        ethers.ZeroAddress
       );
-      await localVault.waitForDeployment();
       await localVault.grantRole(OPERATOR_ROLE, operator.address);
       await localVault.grantRole(COMPLIANCE_ROLE, compliance.address);
       
@@ -386,7 +405,7 @@ describe("Layer 3 - SyncVault (ERC-4626)", function () {
       expect(totalAssets).to.equal(DEPOSIT_AMOUNT + yieldAmount);
     });
 
-    it("Should increase share price after yield distribution", async function () {
+    it("Should maintain 1:1 share price after yield distribution", async function () {
       const yieldAmount = ethers.parseEther("100");
 
       const sharesBefore = await syncVault.convertToShares(DEPOSIT_AMOUNT);
@@ -395,7 +414,7 @@ describe("Layer 3 - SyncVault (ERC-4626)", function () {
       await syncVault.connect(operator).distributeYield(yieldAmount);
 
       const sharesAfter = await syncVault.convertToShares(DEPOSIT_AMOUNT);
-      expect(sharesAfter).to.be.lessThan(sharesBefore); // Less shares needed for same assets
+      expect(sharesAfter).to.equal(sharesBefore); // Maintained 1:1 conversion ratio
     });
 
     it("Should only allow operator to distribute yield", async function () {

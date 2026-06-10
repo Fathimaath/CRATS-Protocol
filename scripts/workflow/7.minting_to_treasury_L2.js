@@ -23,7 +23,7 @@ async function main() {
     
     console.log("Minting 10M AZURE to Treasury...");
     const tx = await azureToken.connect(issuer).mint(treasuryAddress, amount);
-    await tx.wait();
+    const receipt = await tx.wait();
 
     const balance = await azureToken.balanceOf(treasuryAddress);
     console.log("Treasury Balance:", hre.ethers.formatEther(balance), "AZURE");

@@ -13,7 +13,17 @@ async function main() {
     const identitySBT = await hre.ethers.getContractAt("IdentitySBT", deployment.contracts.identitySBT);
     
     const tokenId = await identitySBT.tokenIdOf(investor.address);
+    if (tokenId === 0n || tokenId === 0) {
+        console.log("❌ Investor not registered. Run Step 9 first.");
+        return;
+    }
     console.log("Investor Token ID:", tokenId.toString());
+
+    const identityData = await identitySBT.getIdentity(tokenId);
+    if (identityData.status === 2n || identityData.status === 2) {
+        console.log("ℹ️ Investor status is already VERIFIED. Skipping.");
+        return;
+    }
 
     // Update status to VERIFIED (2)
     const statusVerified = 2;

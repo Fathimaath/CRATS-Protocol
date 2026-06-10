@@ -16,6 +16,10 @@ import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "../interfaces/financial/IFeeEngine.sol";
 import "../interfaces/vault/ISyncVault.sol";
 
+interface IAssetFactoryWithAssets {
+    function assets(address token) external view returns (address, address, bytes32, uint256);
+}
+
 contract NAVOracle is
     Initializable,
     UUPSUpgradeable,
@@ -92,6 +96,7 @@ contract NAVOracle is
     IERC20 public usdc;
     address public protocolTreasury;
     address public insuranceReserve;
+    address public assetFactory;
 
     uint256 public challengeStakeAmount;
 
@@ -439,12 +444,25 @@ contract NAVOracle is
         assetClassForId[assetId] = assetClass;
     }
 
+    function setAssetFactory(address _assetFactory)
+        external
+        onlyRole(DEFAULT_ADMIN_ROLE)
+    {
+        assetFactory = _assetFactory;
+    }
+
     function checkScheduleCompliance(bytes32 assetId)
         public
         view
         returns (bool compliant, uint256 daysRemaining)
     {
         bytes32 cls = assetClassForId[assetId];
+        if (cls == bytes32(0) && assetFactory != address(0)) {
+            address tokenAddr = address(uint160(uint256(assetId)));
+            try IAssetFactoryWithAssets(assetFactory).assets(tokenAddr) returns (address, address, bytes32 category, uint256) {
+                cls = category;
+            } catch {}
+        }
         AssetClassSchedule storage sched = classSchedules[cls];
 
         if (!sched.isActive) return (true, type(uint32).max);

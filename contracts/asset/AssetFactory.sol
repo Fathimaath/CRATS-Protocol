@@ -199,6 +199,11 @@ contract AssetFactory is
     function setAssetRegistry(address registry) external onlyRole(DEFAULT_ADMIN_ROLE) { 
         assetRegistry = registry; 
     }
+
+    function setAssetTokenTemplate(address newImplementation) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        require(newImplementation != address(0), "invalid implementation");
+        assetTokenImplementation = newImplementation;
+    }
     
     function onVaultDeployed(
         address assetToken,

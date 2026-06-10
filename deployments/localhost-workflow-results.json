@@ -1,14 +1,122 @@
 {
-  "lastRun": "2026-04-01T16:46:25.857Z",
+  "lastRun": "2026-06-10T10:16:56.726Z",
   "steps": [
+    {
+      "name": "Issuer Onboarding",
+      "txHash": "0xf4d894ceebe4b59f81f1c1cf7a9115813eff48a06e0fdf94bcbff7dd7dfe5ebb",
+      "contract": "0x413b1AfCa96a3df5A686d8BFBF93d30688a7f7D9",
+      "details": "Issuer: 0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
+      "layer": "L1",
+      "id": 1,
+      "timestamp": "2026-06-10T10:16:25.231Z"
+    },
     {
       "name": "SBT Minting",
       "txHash": "View-only (Minted in Step 1)",
-      "contract": "0x0724F18B2aA7D6413D3fDcF6c0c27458a8170Dd9",
+      "contract": "0x2b5A4e5493d4a54E717057B127cf0C000C876f9B",
       "details": "Token ID: 1, DID: did:crats:nexus-realty",
       "layer": "L1",
       "id": 3,
-      "timestamp": "2026-04-01T16:46:25.857Z"
+      "timestamp": "2026-06-10T10:16:29.499Z"
+    },
+    {
+      "name": "Asset Tokenization",
+      "txHash": "0xfe70c7d11cad82be6aec0f955cfbd334dc08b36d99f737dbf9f06ab5ba4134e1",
+      "contract": "0x140c9Cd4905639ace2fA761Bfb8140DB23dcd001",
+      "details": "Token: Azure Manor (AZURE), Supply: 10M",
+      "layer": "L2",
+      "id": 4,
+      "timestamp": "2026-06-10T10:16:31.822Z"
+    },
+    {
+      "name": "Asset Document Registry",
+      "txHash": "0xaae24634c3656353ce2e48e218c3dd138569567c25dfbd98d9c380bfe81e5562",
+      "contract": "0x140c9Cd4905639ace2fA761Bfb8140DB23dcd001",
+      "details": "Registered: PropTitle.pdf, Appr.pdf",
+      "layer": "L2",
+      "id": 5,
+      "timestamp": "2026-06-10T10:16:34.020Z"
+    },
+    {
+      "name": "Oracle / NAV Config",
+      "txHash": "0x61a3674a251a38e7e7813fa7de594c1317a18c040def4daea10f383d52ff7ef7",
+      "contract": "0x140c9Cd4905639ace2fA761Bfb8140DB23dcd001",
+      "details": "NAV: $1.00/token, Source: RICS Appraisal",
+      "layer": "L2",
+      "id": 6,
+      "timestamp": "2026-06-10T10:16:36.113Z"
+    },
+    {
+      "name": "Minting to Treasury",
+      "txHash": "0x9b016ef2b316980411359d1bf89c186e29cb0c1382012d87e6f17c10b617527d",
+      "contract": "0x140c9Cd4905639ace2fA761Bfb8140DB23dcd001",
+      "details": "Amount: 10M AZURE minted to Issuer",
+      "layer": "L2",
+      "id": 7,
+      "timestamp": "2026-06-10T10:16:38.361Z"
+    },
+    {
+      "name": "Vault Creation",
+      "txHash": "0x640f83245d28c38e234b9319d1c64ac5b8d4dc2fd8c2e22b83109d0efba12f99",
+      "contract": "0x477044170B5AB7DdF4d688e6C6Da6Cc5465338c4",
+      "details": "SyncVault (ERC-4626) for AZURE",
+      "layer": "L3",
+      "id": 8,
+      "timestamp": "2026-06-10T10:16:41.344Z"
+    },
+    {
+      "name": "Investor SBT Minting",
+      "txHash": "0xb300a5fea90333ffea32f5c5bf42de237935144cb3af10bb7ec87a2286f7c21d",
+      "contract": "0x2b5A4e5493d4a54E717057B127cf0C000C876f9B",
+      "details": "Investor Status: VERIFIED",
+      "layer": "L1",
+      "id": 10,
+      "timestamp": "2026-06-10T10:16:43.787Z"
+    },
+    {
+      "name": "Investor Onboarding",
+      "txHash": "0xb300a5fea90333ffea32f5c5bf42de237935144cb3af10bb7ec87a2286f7c21d",
+      "contract": "0x413b1AfCa96a3df5A686d8BFBF93d30688a7f7D9",
+      "details": "Investor: 0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC",
+      "layer": "L1",
+      "id": 9,
+      "timestamp": "2026-06-10T10:16:43.788Z"
+    },
+    {
+      "name": "Investment (Primary)",
+      "txHash": "0xcb506cff8b7e845d52d369dba5156900a355eb34d0488b9a69093f484ef3d3a4",
+      "contract": "0x477044170B5AB7DdF4d688e6C6Da6Cc5465338c4",
+      "details": "Investor deposited 10k AZURE for vAZURE shares",
+      "layer": "L3",
+      "id": 11,
+      "timestamp": "2026-06-10T10:16:49.003Z"
+    },
+    {
+      "name": "Yield Distribution",
+      "txHash": "0xc4c41ff220f1a41d3689df512ba677b3434d025140ce74d544b3ba28f210691b",
+      "contract": "0x477044170B5AB7DdF4d688e6C6Da6Cc5465338c4",
+      "details": "Distributed 1,000 AZURE yield to vault",
+      "layer": "L3",
+      "id": 12,
+      "timestamp": "2026-06-10T10:16:51.614Z"
+    },
+    {
+      "name": "Secondary Market Order",
+      "txHash": "0x73fc2090c60a9dab66e4ad91680a77786d9f2d9d1f71c602d8e3c4b1d753e3bb",
+      "contract": "0x2Dd78Fd9B8F40659Af32eF98555B8b31bC97A351",
+      "details": "Buy Order for 100 vAZURE @ $1.05",
+      "layer": "L4",
+      "id": 13,
+      "timestamp": "2026-06-10T10:16:54.145Z"
+    },
+    {
+      "name": "Clearing & Settlement",
+      "txHash": "0x2ccffb9cf6e9ffdfdff73153ed0560f760a3f15ffcf8296bda8eda2cbd8ce985",
+      "contract": "0x2625760C4A8e8101801D3a48eE64B2bEA42f1E96",
+      "details": "Matched trade settled: Buyer Account 3, Seller Investor",
+      "layer": "L4",
+      "id": 14,
+      "timestamp": "2026-06-10T10:16:56.726Z"
     }
   ]
 }

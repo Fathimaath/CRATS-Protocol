@@ -18,10 +18,17 @@ async function main() {
         throw new Error("No order found. Run Step 13 first.");
     }
 
+    const azureVault = await hre.ethers.getContractAt("SyncVault", deployment.contracts.azureVault);
+    
+    // Amount to fill: 100 shares (same as order amount)
+    const fillAmount = hre.ethers.parseEther("100");
+    
+    console.log("Approving OrderBookEngine to spend investor's vAZURE...");
+    await (await azureVault.connect(investor).approve(deployment.contracts.orderBookEngine, fillAmount)).wait();
+
     console.log("Filling Order (Simulation)...");
     // In a real scenario, the Matching Engine would pair this with a Sell order.
     // Here we simulate the fill by calling fillOrder directly.
-    const fillAmount = hre.ethers.parseEther("100");
     const fillTx = await orderBook.connect(investor).fillOrder(orderId, fillAmount);
     await fillTx.wait();
 
@@ -32,7 +39,7 @@ async function main() {
         buyer.address,
         investor.address,
         deployment.contracts.azureVault,
-        "0x0000000000000000000000000000000000000000",
+        deployment.contracts.usdc,
         fillAmount,
         hre.ethers.parseUnits("1.05", 18)
     );

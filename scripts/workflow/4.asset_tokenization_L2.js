@@ -36,7 +36,12 @@ async function main() {
     };
 
     console.log("Deploying Asset Token via Factory...");
-    const tx = await assetFactory.connect(issuer).deployAsset(assetParams);
+    const tx = await assetFactory.connect(issuer).deployAsset(
+        assetParams.name,
+        assetParams.symbol,
+        assetParams.initialSupply,
+        assetParams.categoryId
+    );
     const receipt = await tx.wait();
 
     // Find AssetDeployed event
@@ -48,7 +53,7 @@ async function main() {
         }
     });
 
-    const assetTokenAddress = assetFactory.interface.parseLog(event).args.assetToken;
+    const assetTokenAddress = assetFactory.interface.parseLog(event).args.token;
     console.log("✅ Asset Token deployed at:", assetTokenAddress);
 
     // Save to deployment info
