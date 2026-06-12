@@ -8,6 +8,7 @@ import "@openzeppelin/contracts-upgradeable/utils/ReentrancyGuardUpgradeable.sol
 import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 import "../interfaces/identity/IIdentityRegistry.sol";
 import "../interfaces/vault/ISyncVault.sol";
 import "../interfaces/financial/IFeeEngine.sol";
@@ -130,13 +131,16 @@ contract SyncVault is
         if (navOracle != address(0)) {
             INAVOracle(navOracle).assertDepositAllowed(assetId);
         }
-        uint256 entryFee = _calcEntryFee(assets, msg.sender);
-        uint256 netAssets = assets - entryFee;
+        uint256 entryFee = _calcEntryFee(assets, receiver);
         if (entryFee > 0) {
-            IERC20(asset()).safeTransferFrom(msg.sender, feeEngine, entryFee);
-            IFeeEngine(feeEngine).receiveFee(address(this), entryFee);
+            address usdcToken = address(IFeeEngine(feeEngine).usdc());
+            uint256 entryFeeUSDC = _scaleDecimals(asset(), usdcToken, entryFee);
+            if (entryFeeUSDC > 0) {
+                IERC20(usdcToken).safeTransferFrom(msg.sender, feeEngine, entryFeeUSDC);
+                IFeeEngine(feeEngine).receiveFee(address(this), entryFeeUSDC);
+            }
         }
-        return super.deposit(netAssets, receiver);
+        return super.deposit(assets, receiver);
     }
 
     function mint(uint256 shares, address receiver) public override(ERC4626Upgradeable, ISyncVault) nonReentrant returns (uint256) {
@@ -148,10 +152,14 @@ contract SyncVault is
             INAVOracle(navOracle).assertDepositAllowed(assetId);
         }
         uint256 assets = super.mint(shares, receiver);
-        uint256 entryFee = _calcEntryFee(assets, msg.sender);
+        uint256 entryFee = _calcEntryFee(assets, receiver);
         if (entryFee > 0) {
-            IERC20(asset()).safeTransfer(feeEngine, entryFee);
-            IFeeEngine(feeEngine).receiveFee(address(this), entryFee);
+            address usdcToken = address(IFeeEngine(feeEngine).usdc());
+            uint256 entryFeeUSDC = _scaleDecimals(asset(), usdcToken, entryFee);
+            if (entryFeeUSDC > 0) {
+                IERC20(usdcToken).safeTransferFrom(msg.sender, feeEngine, entryFeeUSDC);
+                IFeeEngine(feeEngine).receiveFee(address(this), entryFeeUSDC);
+            }
         }
         return assets;
     }
@@ -162,12 +170,15 @@ contract SyncVault is
             IFeeEngine(feeEngine).checkpoint(address(this));
         }
         uint256 exitFee = _calcExitFee(assets, owner);
-        uint256 netAssets = assets - exitFee;
         uint256 shares = previewWithdraw(assets);
-        _withdraw(_msgSender(), receiver, owner, netAssets, shares);
+        _withdraw(_msgSender(), receiver, owner, assets, shares);
         if (exitFee > 0) {
-            IERC20(asset()).safeTransfer(feeEngine, exitFee);
-            IFeeEngine(feeEngine).receiveFee(address(this), exitFee);
+            address usdcToken = address(IFeeEngine(feeEngine).usdc());
+            uint256 exitFeeUSDC = _scaleDecimals(asset(), usdcToken, exitFee);
+            if (exitFeeUSDC > 0) {
+                IERC20(usdcToken).safeTransferFrom(owner, feeEngine, exitFeeUSDC);
+                IFeeEngine(feeEngine).receiveFee(address(this), exitFeeUSDC);
+            }
         }
         return shares;
     }
@@ -179,13 +190,16 @@ contract SyncVault is
         }
         uint256 assets = previewRedeem(shares);
         uint256 exitFee = _calcExitFee(assets, owner);
-        uint256 netAssets = assets - exitFee;
-        _withdraw(_msgSender(), receiver, owner, netAssets, shares);
+        _withdraw(_msgSender(), receiver, owner, assets, shares);
         if (exitFee > 0) {
-            IERC20(asset()).safeTransfer(feeEngine, exitFee);
-            IFeeEngine(feeEngine).receiveFee(address(this), exitFee);
+            address usdcToken = address(IFeeEngine(feeEngine).usdc());
+            uint256 exitFeeUSDC = _scaleDecimals(asset(), usdcToken, exitFee);
+            if (exitFeeUSDC > 0) {
+                IERC20(usdcToken).safeTransferFrom(owner, feeEngine, exitFeeUSDC);
+                IFeeEngine(feeEngine).receiveFee(address(this), exitFeeUSDC);
+            }
         }
-        return netAssets;
+        return assets;
     }
 
     // ─── Fee Helpers ────────────────────────────────────────
@@ -198,6 +212,18 @@ contract SyncVault is
     function _calcExitFee(uint256 assets, address owner) internal view returns (uint256) {
         if (feeEngine == address(0)) return 0;
         return IFeeEngine(feeEngine).calculateExitFee(address(this), assets, owner);
+    }
+
+    function _scaleDecimals(address fromToken, address toToken, uint256 amount) internal view returns (uint256) {
+        if (fromToken == toToken) return amount;
+        uint8 fromDecimals = IERC20Metadata(fromToken).decimals();
+        uint8 toDecimals = IERC20Metadata(toToken).decimals();
+        if (fromDecimals == toDecimals) return amount;
+        if (fromDecimals > toDecimals) {
+            return amount / (10 ** (fromDecimals - toDecimals));
+        } else {
+            return amount * (10 ** (toDecimals - fromDecimals));
+        }
     }
 
     // ─── Setters ────────────────────────────────────────────

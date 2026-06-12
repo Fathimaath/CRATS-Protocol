@@ -206,10 +206,56 @@ When `hurdleRateBPS` is defined (e.g. 800 BPS = 8% annual hurdle), the performan
 
 The hurdle calculation is handled within `FeeEngine.calculatePerformanceFee()` using OpenZeppelin's `MathUpgradeable.mulDiv` for overflow-safe arithmetic.
 
-#### 2.2.4 Fee Collection: Method A vs. Method B
+#### 2.2.4 Fee Collection: Method A, B & C
 
 *   **Method A (Share Minting):** The vault mints new shares directly to the platform's fee address. This dilutes existing shareholders proportionally. *Used exclusively for Performance Fees.*
 *   **Method B (Asset Deduction):** Fees are deducted directly from the vault's underlying assets (`totalAssets`). This lowers the NAV per share directly. *Used as the default for Management Fees.*
+*   **Method C (Atomic USDC Settlement - Entry/Exit Fees):** Because vault deposits are denominated in RWA tokens, but operational fees are collected in stablecoins, the vault executes an atomic **USDC fee transfer** during investor transactions (`deposit`, `mint`, `withdraw`, `redeem`).
+    1. The vault calculates the entry or exit fee in RWA token terms.
+    2. The vault scales this amount from RWA decimals (18) to USDC decimals (6) using `_scaleDecimals`.
+    3. The vault executes a `safeTransferFrom` of USDC directly from the sender (e.g. Treasury/Investor) to the `FeeEngine`.
+    4. The vault registers the USDC fee accrual on the `FeeEngine` using `receiveFee`.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor Investor as Investor / Treasury
+    participant SV as SyncVault (ERC-4626)
+    participant FE as FeeEngine (UUPS Proxy)
+    participant USDC as USDC Contract
+    
+    Investor->>SV: deposit(assets, receiver)
+    activate SV
+    SV->>FE: checkpoint(address(this))
+    Note over SV: Calculates entryFee in RWA tokens
+    Note over SV: Scales RWA fee to USDC (6 decimals)
+    SV->>USDC: safeTransferFrom(Investor, FeeEngine, entryFeeUSDC)
+    USDC-->>SV: Transfer Success
+    SV->>FE: receiveFee(address(this), entryFeeUSDC)
+    SV->>SV: Super.deposit(assets, receiver)
+    SV-->>Investor: Mint shares to receiver
+    deactivate SV
+```
+
+#### 2.2.5 Vault Registration & Checkpointing Workflow
+
+To ensure seamless fee tracking and automated operations, the `FeeEngine` uses an integrated listing and transaction workflow:
+
+1. **Vault Creation & Registration:**
+   Upon deploying a new `SyncVault` (ERC-4626) during the asset listing phase, the platform backend calls the following external function on the `FeeEngine` contract:
+   ```solidity
+   function registerVault(
+       address vault,
+       IFeeEngine.FeeConfig calldata config,
+       IFeeEngine.FeeAllocation calldata alloc
+   ) external onlyRole(FEE_MANAGER_ROLE);
+   ```
+2. **Dynamic Role Authorization:**
+   During registration, the `FeeEngine` executes `_grantRole(CHECKPOINT_ROLE, vault)`, dynamically granting the `CHECKPOINT_ROLE` to the newly created `SyncVault` contract address.
+3. **On-Chain Auto-Checkpointing:**
+   Whenever investors interact with the vault through standard ERC-4626 methods (`deposit`, `mint`, `withdraw`, `redeem`), the `SyncVault` calls `FeeEngine.checkpoint(address(this))` internally. Since the vault itself holds the `CHECKPOINT_ROLE`, this call updates all time-weighted management fees prior to share pricing updates.
+4. **Decoupled Backend Orchestration:**
+   The backend does not need to submit, verify, or sign manual checkpoint transactions (either via private keys or Fireblocks). Checkpoint updates are automatically triggered and paid for as part of the investor's standard transaction gas.
 
 ### 2.3 Fee Distribution Mechanics (`FeeEngine.sol`)
 
@@ -455,6 +501,35 @@ contract FeeEngine is
 
     function _authorizeUpgrade(address) internal override onlyRole(DEFAULT_ADMIN_ROLE) {}
 }
+```
+
+### 2.3.1 On-Chain USDC/USDT Fee Collection Flow
+
+To guarantee that all entry/exit fees are collected and stored on-chain, `SyncVault` automatically queries the `FeeEngine` for the user's tier-based fee configuration, scales the fee from the asset's 18 decimals to the stablecoin's 6 decimals, and transfers the USDC/USDT fee directly from the sender/investor wallet to the `FeeEngine` during the transaction.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor Investor
+    participant Treasury as Platform Treasury (Fireblocks EOA)
+    participant SyncVault as SyncVault (ERC-4626)
+    participant FeeEngine as FeeEngine
+    participant USDC as USDC / USDT Token Contract
+    participant AssetToken as AssetToken (RWA)
+
+    Investor->>Treasury: 1. Transfer $10,000 USDC/USDT (Payment)
+    Note over Treasury: Treasury receives $10,000 USDC/USDT<br/>and prepares RWA tokens (e.g. AZURE)
+    Treasury->>USDC: 2. Approve SyncVault to spend USDC Fee (e.g. $10 fee)
+    Treasury->>AssetToken: 3. Approve SyncVault to spend 10,000 AZURE (RWA)
+    Treasury->>SyncVault: 4. deposit(10,000 AZURE, InvestorAddress)
+    activate SyncVault
+    SyncVault->>FeeEngine: 5. Calculate entry fee for 10,000 AZURE
+    FeeEngine-->>SyncVault: 6. Returns fee amount (e.g. 10 USDC/USDT, 18-dec)
+    SyncVault->>USDC: 7. safeTransferFrom(Treasury, FeeEngine, 10 USDC/USDT, 6-dec)
+    SyncVault->>FeeEngine: 8. receiveFee(vaultAddress, 10 USDC/USDT)
+    SyncVault->>AssetToken: 9. safeTransferFrom(Treasury, SyncVault, 10,000 AZURE)
+    SyncVault->>SyncVault: 10. Mint 10,000 vAZURE Shares to InvestorAddress
+    deactivate SyncVault
 ```
 
 ### 2.4 Fee Governance & Hard Caps

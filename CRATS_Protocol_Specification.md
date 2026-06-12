@@ -296,17 +296,45 @@ The EVM smart contracts represent the **execution and state layer**. All identit
 
 ### 5.2 The Tri-Stage Investment Lifecycle (Retail Mediation)
 
-To enable retail investors holding standard assets (USDC/USDT) in non-custodial wallets to seamlessly invest in compliant vaults, the protocol utilizes a mediated settlement flow:
+To enable retail investors holding standard assets (USDC/USDT) in non-custodial wallets to seamlessly invest in compliant vaults, the protocol utilizes a mediated settlement flow. During this process, entry fees are calculated on-chain and pulled directly in USDC/USDT from the Treasury's wallet to the `FeeEngine`:
 
 *   **Stage 1: Public Capital Transfer (User Initiated):**
     The investor transfers stablecoins (USDT/USDC) from their connected browser wallet (MetaMask) to the Platform Treasury Wallet.
     *Logic:* `ERC20.transfer(treasuryAddress, stablecoinAmount)`
 *   **Stage 2: Institutional Conversion (Treasury Mediation):**
-    The Treasury detects the transfer and performs the conversion on-chain. It approves the required amount of RWA `AssetTokens` for the destination Vault.
-    *Logic:* `AssetToken.approve(vaultAddress, assetAmount)`
-*   **Stage 3: Vault Share Minting (Atomic Settlement):**
-    The Treasury deposits the RWA assets into the Vault, specifying the **Investor's Wallet Address** as the share recipient. The Vault atomically mints the yield-bearing shares directly to the investor's wallet.
+    The Treasury detects the transfer and performs the conversion on-chain. It approves the required amount of RWA `AssetTokens` and USDC Fee for the destination Vault.
+    *Logic:* `AssetToken.approve(vaultAddress, assetAmount)` and `USDC.approve(vaultAddress, feeAmount)`
+*   **Stage 3: Vault Share Minting & On-Chain Fee Pulling (Atomic Settlement):**
+    The Treasury deposits the RWA assets into the Vault, specifying the **Investor's Wallet Address** as the share recipient. The Vault automatically queries the `FeeEngine` for the entry fee, scales the decimals to match USDC (6 decimals), pulls the USDC fee from the Treasury, and mints the yield-bearing shares directly to the investor's wallet.
     *Logic:* `SyncVault.deposit(assetAmount, investorAddress)`
+
+#### On-Chain USDC/USDT Fee Collection Sequence
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor Investor
+    participant Treasury as Platform Treasury (Fireblocks EOA)
+    participant SyncVault as SyncVault (ERC-4626)
+    participant FeeEngine as FeeEngine
+    participant USDC as USDC / USDT Token Contract
+    participant AssetToken as AssetToken (RWA)
+
+    Investor->>Treasury: 1. Transfer $10,000 USDC/USDT (Payment)
+    Note over Treasury: Treasury receives $10,000 USDC/USDT<br/>and prepares RWA tokens (e.g. AZURE)
+    Treasury->>USDC: 2. Approve SyncVault to spend USDC Fee (e.g. $10 fee)
+    Treasury->>AssetToken: 3. Approve SyncVault to spend 10,000 AZURE (RWA)
+    Treasury->>SyncVault: 4. deposit(10,000 AZURE, InvestorAddress)
+    activate SyncVault
+    SyncVault->>FeeEngine: 5. Calculate entry fee for 10,000 AZURE
+    FeeEngine-->>SyncVault: 6. Returns fee amount (e.g. 10 USDC/USDT, 18-dec)
+    SyncVault->>USDC: 7. safeTransferFrom(Treasury, FeeEngine, 10 USDC/USDT, 6-dec)
+    SyncVault->>FeeEngine: 8. receiveFee(vaultAddress, 10 USDC/USDT)
+    SyncVault->>AssetToken: 9. safeTransferFrom(Treasury, SyncVault, 10,000 AZURE)
+    SyncVault->>SyncVault: 10. Mint 10,000 vAZURE Shares to InvestorAddress
+    deactivate SyncVault
+```
+
 
 ---
 
@@ -333,6 +361,47 @@ To ensure institutional fairness, the `FeeEngine` enforces High Water Mark prote
 - **Performance Fee Accrual:**
   $$\text{Performance Fee} = \max\left(0, \frac{(\text{Current NAV} - \text{HWM}) \times \text{Total Shares} \times \text{Performance Fee BPS}}{10,000}\right)$$
   Charged during valuation updates and checkpoints, with the corresponding amount minted or transferred to the fee receiver.
+
+### 6.4 Vault Registration & Auto-Checkpointing Integration Workflow
+
+To ensure seamless fee management during platform operations, the `FeeEngine` integrates with the listing and investment layers via an automated on-chain checkpointing workflow:
+
+1. **Vault Creation & Registration (Listing Stage):**
+   When an issuer lists an asset and a new `SyncVault` (ERC-4626) is deployed, the backend calls the `FeeEngine.registerVault(vaultAddress, config, allocation)` function.
+2. **Auto-Granted Roles:**
+   Upon registration, the `FeeEngine` automatically grants the `CHECKPOINT_ROLE` to the newly deployed `SyncVault` contract address.
+3. **On-Chain Checkpointing:**
+   During investor transactions (e.g. `deposit`, `mint`, `withdraw`, `redeem`), the `SyncVault` contract automatically calls `FeeEngine.checkpoint(address(this))` on-chain.
+4. **Decoupled Backend Execution:**
+   Because the vault contract holds the `CHECKPOINT_ROLE` directly, it updates its own fee state within the `FeeEngine` as part of the user's transaction. The backend does not need to send or sign separate checkpoint transactions via private keys or Fireblocks.
+
+### 6.5 Atomic USDC Fee Settlement Flow (Direct Fee Deduction)
+
+To avoid locking up real-world assets (RWA) as fees and to align with investor expectations, the protocol enforces atomic collection of entry and exit fees directly in stablecoins (USDC/USDT):
+
+*   **Atomic Extractions:** When an investor interacts with `SyncVault`, the entry/exit fee is calculated in RWA token terms, scaled down to 6 decimals to match USDC/USDT, and then pulled directly from the sender's wallet to the `FeeEngine`.
+*   **On-Chain Registry:** The `FeeEngine` tracks each vault's accumulated stablecoin fees, which can then be distributed programmatically to the platform treasury, compliance reserves, and the asset issuer.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor Investor as Investor / Treasury
+    participant SV as SyncVault (ERC-4626)
+    participant FE as FeeEngine (UUPS Proxy)
+    participant USDC as USDC Contract
+    
+    Investor->>SV: deposit(assets, receiver)
+    activate SV
+    SV->>FE: checkpoint(address(this))
+    Note over SV: Calculates entryFee in RWA tokens
+    Note over SV: Scales RWA fee to USDC (6 decimals)
+    SV->>USDC: safeTransferFrom(Investor, FeeEngine, entryFeeUSDC)
+    USDC-->>SV: Transfer Success
+    SV->>FE: receiveFee(address(this), entryFeeUSDC)
+    SV->>SV: Super.deposit(assets, receiver)
+    SV-->>Investor: Mint shares to receiver
+    deactivate SV
+```
 
 ---
 
@@ -486,7 +555,7 @@ function validateDocuments(
 
 #### `SyncVault.sol` (Synchronous Compliance Gated Deposits & Minting)
 ```solidity
-// Enforces that investors are KYC-verified in Layer 1 before depositing stablecoins
+// Enforces KYC gatekeeping, calculates the entry fee, scales decimals, pulls the USDC fee, and deposits RWA
 function deposit(uint256 assets, address receiver) 
     public 
     override(ERC4626Upgradeable, ISyncVault) 
@@ -494,6 +563,21 @@ function deposit(uint256 assets, address receiver)
     returns (uint256) 
 {
     _checkCompliance(msg.sender);
+    if (feeEngine != address(0)) {
+        IFeeEngine(feeEngine).checkpoint(address(this));
+    }
+    if (navOracle != address(0)) {
+        INAVOracle(navOracle).assertDepositAllowed(assetId);
+    }
+    uint256 entryFee = _calcEntryFee(assets, receiver);
+    if (entryFee > 0) {
+        address usdcToken = address(IFeeEngine(feeEngine).usdc());
+        uint256 entryFeeUSDC = _scaleDecimals(asset(), usdcToken, entryFee);
+        if (entryFeeUSDC > 0) {
+            IERC20(usdcToken).safeTransferFrom(msg.sender, feeEngine, entryFeeUSDC);
+            IFeeEngine(feeEngine).receiveFee(address(this), entryFeeUSDC);
+        }
+    }
     return super.deposit(assets, receiver);
 }
 ```

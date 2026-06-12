@@ -218,34 +218,36 @@ contract FeeEngine is
         whenNotPaused
         onlyRole(DISTRIBUTOR_ROLE)
     {
-        uint256 mgmtPending = pendingMgmtFees[vault];
-        uint256 perfPending = pendingPerfFees[vault];
-        uint256 totalPending = mgmtPending + perfPending;
-        if (totalPending == 0) return;
-
         uint256 available = feeRevenue[vault];
-        uint256 toDistribute = Math.min(totalPending, available);
-        if (toDistribute == 0) return;
+        if (available == 0) return;
 
         IFeeEngine.FeeAllocation storage alloc = allocations[vault];
 
-        uint256 treasuryShare   = toDistribute * alloc.protocolBPS  / BPS_DENOMINATOR;
-        uint256 issuerShare     = toDistribute * alloc.issuerBPS    / BPS_DENOMINATOR;
-        uint256 complianceShare = toDistribute * alloc.complianceBPS / BPS_DENOMINATOR;
-        uint256 insuranceShare  = toDistribute * alloc.insuranceBPS / BPS_DENOMINATOR;
-        uint256 dust = toDistribute - treasuryShare - issuerShare - complianceShare - insuranceShare;
-        insuranceShare += dust;
+        uint256 treasuryShare   = available * alloc.protocolBPS  / BPS_DENOMINATOR;
+        uint256 issuerShare     = available * alloc.issuerBPS    / BPS_DENOMINATOR;
+        uint256 complianceShare = available * alloc.complianceBPS / BPS_DENOMINATOR;
+        uint256 insuranceShare  = available * alloc.insuranceBPS / BPS_DENOMINATOR;
+        insuranceShare += (available - treasuryShare - issuerShare - complianceShare - insuranceShare);
 
-        pendingMgmtFees[vault] -= (toDistribute * mgmtPending) / totalPending;
-        pendingPerfFees[vault]  -= (toDistribute * perfPending) / totalPending;
-        feeRevenue[vault]        -= toDistribute;
+        {
+            uint256 mgmtPending = pendingMgmtFees[vault];
+            uint256 perfPending = pendingPerfFees[vault];
+            uint256 totalPending = mgmtPending + perfPending;
+
+            if (totalPending > 0) {
+                uint256 deducted = Math.min(available, totalPending);
+                pendingMgmtFees[vault] -= (deducted * mgmtPending) / totalPending;
+                pendingPerfFees[vault]  -= (deducted * perfPending) / totalPending;
+            }
+        }
+        feeRevenue[vault] -= available;
 
         usdc.safeTransfer(alloc.protocolTreasury, treasuryShare);
         usdc.safeTransfer(alloc.issuerWallet, issuerShare);
         usdc.safeTransfer(alloc.complianceFund, complianceShare);
         usdc.safeTransfer(alloc.insuranceReserve, insuranceShare);
 
-        emit IFeeEngine.FeesDistributed(vault, toDistribute, treasuryShare, issuerShare, complianceShare, insuranceShare);
+        emit IFeeEngine.FeesDistributed(vault, available, treasuryShare, issuerShare, complianceShare, insuranceShare);
     }
 
     // ═══════════════════════════════════════════════════════════
