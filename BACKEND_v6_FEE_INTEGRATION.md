@@ -72,75 +72,105 @@ struct FeeAllocation {
 
 ---
 
-## 💸 3. Primary Market Investment Workflow (USDC Fee Pre-Approval)
+## 💸 3. Primary Market Investment Workflow (Three-Party Lifecycle)
 
-Because the `SyncVault` pulls the entry fee in USDC directly from the investor/treasury address, the backend must ensure that the USDC allowance is approved **before** calling `deposit()` or `mint()`.
+To protect the underlying real-world assets (RWA) and simplify user interactions, the platform operates a **Three-Party Investment Lifecycle**:
+1. The **Investor** sends USDC/USDT directly to the platform's **Treasury Wallet** off-chain.
+2. The **Treasury Wallet** holds the stablecoins and the RWA tokens.
+3. The **Treasury Wallet** initiates `SyncVault.deposit(assetAmount, investorAddress)`.
+4. The **SyncVault** contract automatically pulls the entry fee in USDC/USDT from the Treasury, pulls the RWA asset tokens from the Treasury, and mints the yield-bearing vault shares (e.g. `vAZURE`) directly to the **Investor's Wallet**.
 
-### Step-by-Step Flow
+### Step-by-Step Flow (Plain Text)
+
+1. **Monitor Capital Inbound:** The backend checks that the investor's stablecoins (USDC/USDT) have successfully arrived in the Treasury Wallet.
+2. **Approve RWA Token Spend:** The backend sends a transaction via Fireblocks from the Treasury Wallet to the RWA `AssetToken` contract:
+   * Action: `assetToken.approve(syncVaultAddress, assetAmount)`
+3. **Approve USDC Fee Spend:** The backend calculates the entry fee in USDC (scaled to 6 decimals). It then checks `usdc.allowance(treasuryAddress, syncVaultAddress)`. If the allowance is insufficient, it sends a transaction via Fireblocks from the Treasury Wallet to the USDC contract:
+   * Action: `usdc.approve(syncVaultAddress, requiredEntryFeeUSDC)`
+4. **Execute Vault Deposit:** The backend sends a transaction via Fireblocks from the Treasury Wallet to the `SyncVault` contract:
+   * Action: `syncVault.deposit(assetAmount, investorAddress)`
+   * On-chain, the vault pulls the RWA tokens and the USDC entry fee from the Treasury Wallet (`msg.sender`), and mints the shares to the Investor (`receiver`).
 
 ```mermaid
 sequenceDiagram
     autonumber
-    actor Inv as Investor Wallet
+    actor Investor as Investor Wallet
     participant Portal as Platform Backend
-    participant FB as Fireblocks SDK
+    participant FB as Fireblocks (Treasury)
     participant USDC as USDC Contract
+    participant Asset as RWA Asset Token
     participant SV as SyncVault
 
+    Investor->>FB: Sends USDC/USDT to Treasury (Off-chain/On-chain transfer)
     Portal->>Portal: Calculate expected Entry Fee in USDC
-    Note over Portal: EntryFeeUSDC = (DepositAmount * entryFeeBPS / 10000) scaled to 6 decimals
-
-    Portal->>USDC: Call allowance(InvestorAddress, SyncVaultAddress)
     
+    Portal->>FB: CONTRACT_CALL: Asset.approve(SyncVaultAddress, assetAmount)
+    FB-->>Portal: Transaction Completed
+    
+    Portal->>USDC: Call allowance(TreasuryAddress, SyncVaultAddress)
     alt Allowance < EntryFeeUSDC
         Portal->>FB: CONTRACT_CALL: USDC.approve(SyncVaultAddress, EntryFeeUSDC)
-        FB-->>Portal: Transaction Completed (Allowance approved)
+        FB-->>Portal: Transaction Completed
     end
 
-    Portal->>FB: CONTRACT_CALL: SyncVault.deposit(assets, investorAddress)
+    Portal->>FB: CONTRACT_CALL: SyncVault.deposit(assetAmount, investorAddress)
     activate FB
-    FB->>SV: deposit(assets, investorAddress)
-    Note over SV: Pulls EntryFeeUSDC from Msg.sender to FeeEngine
-    SV->>USDC: transferFrom(Investor, FeeEngine, EntryFeeUSDC)
+    FB->>SV: deposit(assetAmount, investorAddress)
+    Note over SV: msg.sender = Treasury, receiver = Investor
+    SV->>USDC: safeTransferFrom(Treasury, FeeEngine, EntryFeeUSDC)
+    SV->>Asset: safeTransferFrom(Treasury, SyncVault, assetAmount)
     SV->>SV: Mint shares to Investor
     SV-->>FB: Complete
     deactivate FB
-    Portal-->>Inv: Share allocation successful!
+    Portal-->>Investor: Shares allocated successfully!
 ```
 
 ### Backend Implementation Example (Node.js + Ethers)
 
 ```javascript
 const { ethers } = require("ethers");
-const axios = require("axios"); // For Fireblocks REST API
 
-async function processPrimaryMarketInvestment(investorAddress, vaultAddress, assetAmountHex) {
+async function processPrimaryMarketInvestment(investorAddress, vaultAddress, assetAmountHex, treasuryAddress) {
   const syncVault = new ethers.Contract(vaultAddress, SV_ABI, provider);
+  const assetTokenAddress = await syncVault.asset();
+  const assetToken = new ethers.Contract(assetTokenAddress, Asset_ABI, provider);
+  
   const feeEngineAddress = await syncVault.feeEngine();
   const feeEngine = new ethers.Contract(feeEngineAddress, FE_ABI, provider);
   const usdcAddress = await feeEngine.usdc();
   const usdc = new ethers.Contract(usdcAddress, ERC20_ABI, provider);
 
-  // 1. Calculate Entry Fee
+  const assetAmount = BigInt(assetAmountHex);
+
+  // 1. Approve RWA Asset Token Spend
+  const currentAssetAllowance = await assetToken.allowance(treasuryAddress, vaultAddress);
+  if (currentAssetAllowance < assetAmount) {
+    console.log(`Approving SyncVault to spend RWA tokens from Treasury...`);
+    await submitFireblocksContractCall({
+      vaultAccountId: getTreasuryVaultId(),
+      contractAddress: assetTokenAddress,
+      abi: Asset_ABI,
+      functionName: "approve",
+      args: [vaultAddress, assetAmount.toString()]
+    });
+  }
+
+  // 2. Calculate and Approve USDC Fee Spend
   const config = await feeEngine.vaultConfigs(vaultAddress);
   const entryFeeBPS = config.entryFeeBPS;
-  
-  const assetAmount = BigInt(assetAmountHex);
   const rawEntryFee = (assetAmount * BigInt(entryFeeBPS)) / 10000n;
 
-  // Scale decimals from Asset (18 decimals) to USDC (6 decimals)
+  // Scale decimals from RWA Asset (18 decimals) to USDC (6 decimals)
   const assetDecimals = 18;
   const usdcDecimals = 6;
   const entryFeeUSDC = rawEntryFee / BigInt(10 ** (assetDecimals - usdcDecimals));
 
   if (entryFeeUSDC > 0n) {
-    // 2. Check current allowance
-    const currentAllowance = await usdc.allowance(investorAddress, vaultAddress);
-    if (currentAllowance < entryFeeUSDC) {
-      console.log(`Approving SyncVault to spend ${entryFeeUSDC.toString()} USDC...`);
-      // Submit approval transaction via Fireblocks
+    const currentUsdcAllowance = await usdc.allowance(treasuryAddress, vaultAddress);
+    if (currentUsdcAllowance < entryFeeUSDC) {
+      console.log(`Approving SyncVault to spend USDC fees from Treasury...`);
       await submitFireblocksContractCall({
-        vaultAccountId: getVaultIdForAddress(investorAddress),
+        vaultAccountId: getTreasuryVaultId(),
         contractAddress: usdcAddress,
         abi: ERC20_ABI,
         functionName: "approve",
@@ -149,10 +179,10 @@ async function processPrimaryMarketInvestment(investorAddress, vaultAddress, ass
     }
   }
 
-  // 3. Execute Deposit
-  console.log(`Executing deposit of ${assetAmount.toString()} RWA assets...`);
+  // 3. Execute Deposit (Treasury is caller, Investor is receiver)
+  console.log(`Executing deposit. Payer: Treasury, Recipient: Investor (${investorAddress})`);
   const depositTx = await submitFireblocksContractCall({
-    vaultAccountId: getVaultIdForAddress(investorAddress),
+    vaultAccountId: getTreasuryVaultId(),
     contractAddress: vaultAddress,
     abi: SV_ABI,
     functionName: "deposit",

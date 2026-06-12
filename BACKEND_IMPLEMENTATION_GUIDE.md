@@ -125,15 +125,16 @@ When submitting `CONTRACT_CALL` transactions, ensure the `destination` object is
 
 ---
 
-## 💎 5. The Tri-Stage Investment Lifecycle
+## 💎 5. The Three-Party Investment Lifecycle
 
-This is the core business logic for processing investments from retail to institutional.
+This is the core business logic for processing investments from retail/institutional investors:
 
 | Stage | Action | Description |
 |:--- |:--- |:--- |
-| **1. Capital Transfer** | `ERC20.transfer` | Investor sends stablecoins to the Treasury Vault. |
-| **2. Mediation** | `AssetToken.approve` | Treasury approves the target Vault to spend its RWA tokens. |
-| **3. Settlement** | `SyncVault.deposit` | Treasury deposits assets into the Vault on behalf of the investor; shares are minted to investor. |
+| **1. Capital Transfer** | `ERC20.transfer` | Investor sends stablecoins (USDC/USDT) to the Treasury Wallet. |
+| **2. Asset Approval** | `AssetToken.approve` | Treasury approves the target `SyncVault` to spend its RWA tokens. |
+| **3. Fee Approval** | `ERC20.approve` | Treasury approves the target `SyncVault` to spend the entry fee in USDC/USDT. |
+| **4. Settlement** | `SyncVault.deposit` | Treasury deposits RWA assets into the Vault on behalf of the investor. Vault pulls the entry fee in USDC/USDT directly from the Treasury to the `FeeEngine` and mints shares directly to the investor's wallet. |
 
 ---
 
