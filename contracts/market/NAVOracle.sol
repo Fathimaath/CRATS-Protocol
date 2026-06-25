@@ -324,6 +324,10 @@ contract NAVOracle is
     function enforceStalenessCircuitBreaker(bytes32 assetId)
         external
     {
+        bytes32 vaultId = assetToVaultId[assetId];
+        require(vaultAddress[vaultId] != address(0), "Asset not registered");
+        require(activeSubmission[assetId].submittedAt != 0, "No submission exists");
+
         if (getNAVState(assetId) == NAVState.STALE) {
             _pause();
             emit CircuitBreakerTriggered(assetId);
@@ -526,6 +530,13 @@ contract NAVOracle is
         onlyRole(DEFAULT_ADMIN_ROLE)
     {
         usdc = IERC20(_usdc);
+    }
+
+    function unpause()
+        external
+        onlyRole(DEFAULT_ADMIN_ROLE)
+    {
+        _unpause();
     }
 
     function setProtocolTreasury(address _treasury)

@@ -79,6 +79,7 @@ interface INAVOracle {
     function assertDepositAllowed(bytes32 assetId) external view;
     function assertRedemptionAllowed(bytes32) external pure;
     function enforceStalenessCircuitBreaker(bytes32 assetId) external;
+    function unpause() external;
 
     function fileChallenge(bytes32 assetId, uint256 challengerValue, bytes32 evidenceHash, bytes calldata signature) external;
     function resolveDispute(bytes32 assetId, uint256 resolvedValue, bytes32 evidence) external;

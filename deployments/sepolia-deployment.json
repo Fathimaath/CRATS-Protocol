@@ -2,7 +2,7 @@
   "network": "sepolia",
   "chainId": "11155111",
   "deployer": "0x5537dbc19eeE936A615B151c8C5983FBF735C583",
-  "timestamp": "2026-06-12T21:36:00.817Z",
+  "timestamp": "2026-06-25T10:42:06.086Z",
   "v6Step": 9,
   "contracts": {
     "kycRegistry": "0xb4C0CD81eA49Dc4AC94472004955C7EE9f99Dc5c",
@@ -30,6 +30,7 @@
     "clearingHouse": "0xB4fb98E1654820c085F806BcEE1d48B2432EE0a6",
     "marketplaceConfigured": true,
     "timelock": "0x8DAEEf03a41ACd48c01A6Cca0684991fFDF525D8",
-    "priceOracle": "0xc40D52C787Db4DFF42572db9941E76Fc5Dc18f2a"
+    "priceOracle": "0xc40D52C787Db4DFF42572db9941E76Fc5Dc18f2a",
+    "navOracleImpl": "0xc2E85c7085170f38BFdd8A974e6211e017740e73"
   }
 }
