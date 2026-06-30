@@ -337,6 +337,68 @@ contract FeeEngine is
         emit IFeeEngine.FeeReceived(vault, amount, msg.sender);
     }
 
+    // ═══════════════════════════════════════════════════════════
+    // SECTION 10: FEE DASHBOARD (VIEW ONLY — §4.6)
+    // ═══════════════════════════════════════════════════════════
+
+    /**
+     * @dev Aggregate fee data for a vault — for frontend fee dashboard.
+     *
+     * Dashboard field mapping:
+     *   accruedManagementFee  → FeeEngine.accruedManagementFee(vault)
+     *   pendingMgmtFees       → FeeEngine.pendingMgmtFees[vault]
+     *   pendingPerfFees       → FeeEngine.pendingPerfFees[vault]
+     *   totalFeeRevenue       → FeeEngine.feeRevenue[vault]
+     *   entryFeeBPS           → feeConfigs[vault].entryFeeBPS
+     *   exitFeeBPS            → feeConfigs[vault].exitFeeBPS
+     *   mgmtFeeBPS            → feeConfigs[vault].mgmtFeeBPS
+     *   perfFeeBPS            → feeConfigs[vault].perfFeeBPS
+     *   tradingFeeBPS         → feeConfigs[vault].tradingFeeBPS
+     *   highWaterMarkNAV      → hwmRecords[vault].highWaterMarkNAV
+     *   lastAccrualTs         → feeConfigs[vault].lastAccrualTs
+     *   hasPendingConfigChange → pendingConfigs[vault].executeAt > 0
+     *   pendingConfigExecuteAt → pendingConfigs[vault].executeAt
+     */
+    struct FeeDashboardData {
+        uint256 accruedManagementFee;
+        uint256 pendingMgmtFees;
+        uint256 pendingPerfFees;
+        uint256 totalFeeRevenue;
+        uint16  entryFeeBPS;
+        uint16  exitFeeBPS;
+        uint96  mgmtFeeBPS;
+        uint16  perfFeeBPS;
+        uint16  tradingFeeBPS;
+        uint128 highWaterMarkNAV;
+        uint32  lastAccrualTs;
+        bool    hasPendingConfigChange;
+        uint64  pendingConfigExecuteAt;
+    }
+
+    function getFeeDashboard(address vault)
+        external
+        view
+        returns (FeeDashboardData memory data)
+    {
+        IFeeEngine.FeeConfig    storage cfg   = feeConfigs[vault];
+        IFeeEngine.HWMRecord    storage hwm   = hwmRecords[vault];
+        IFeeEngine.PendingConfig storage pend = pendingConfigs[vault];
+
+        data.accruedManagementFee   = accruedManagementFee(vault);
+        data.pendingMgmtFees        = pendingMgmtFees[vault];
+        data.pendingPerfFees        = pendingPerfFees[vault];
+        data.totalFeeRevenue        = feeRevenue[vault];
+        data.entryFeeBPS            = cfg.entryFeeBPS;
+        data.exitFeeBPS             = cfg.exitFeeBPS;
+        data.mgmtFeeBPS             = cfg.mgmtFeeBPS;
+        data.perfFeeBPS             = cfg.perfFeeBPS;
+        data.tradingFeeBPS          = cfg.tradingFeeBPS;
+        data.highWaterMarkNAV       = hwm.highWaterMarkNAV;
+        data.lastAccrualTs          = cfg.lastAccrualTs;
+        data.hasPendingConfigChange = (pend.executeAt > 0);
+        data.pendingConfigExecuteAt = pend.executeAt;
+    }
+
     // ─── OZ Storage Gap ─────────────────────────────────────
     uint256[50] private __gap;
 }

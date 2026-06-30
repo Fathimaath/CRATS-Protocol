@@ -2,8 +2,7 @@
   "network": "sepolia",
   "chainId": "11155111",
   "deployer": "0x5537dbc19eeE936A615B151c8C5983FBF735C583",
-  "timestamp": "2026-06-25T10:42:06.086Z",
-  "v6Step": 9,
+  "timestamp": "2026-06-30T13:31:49.826Z",
   "contracts": {
     "kycRegistry": "0xb4C0CD81eA49Dc4AC94472004955C7EE9f99Dc5c",
     "identitySBT": "0x5e88d8a83dE2F46F6809BaA06299f5113f3607A7",
@@ -31,6 +30,13 @@
     "marketplaceConfigured": true,
     "timelock": "0x8DAEEf03a41ACd48c01A6Cca0684991fFDF525D8",
     "priceOracle": "0xc40D52C787Db4DFF42572db9941E76Fc5Dc18f2a",
-    "navOracleImpl": "0xc2E85c7085170f38BFdd8A974e6211e017740e73"
+    "navOracleImpl": "0xc2E85c7085170f38BFdd8A974e6211e017740e73",
+    "fineArtPlugin": "0x84887FF77a17Fd17c350E60ADbd54a25Abf0d8be",
+    "fineArtPluginRegistered": true,
+    "disputeResolver": "0xB69308E970967b2D5073f2Ed3904A816De5cb2e6",
+    "navScheduler": "0xD3e9f677a20e1CF377a0f52E18bD8aecCd0A60aD",
+    "resolverRoleGranted": true,
+    "schedulerAdminGranted": true,
+    "navSchedulesInitialized": true
   }
 }

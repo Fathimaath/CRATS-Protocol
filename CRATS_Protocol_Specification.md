@@ -1,8 +1,10 @@
 # TECHNICAL SPECIFICATION
 ## CRATS Protocol Technical Specification & Development Lifecycle
-### Requirements, Design & Development Phases (Current State - v6.0.0)
+### Requirements, Design & Development Phases (Current State - v7.0.0)
 **Real-World Asset Tokenization Platform**  
 **Ethereum Sepolia (Development Network)**
+
+> **v7.0.0 — 2026-06-30** — FineArt Plugin deployed · DisputeResolver · NAVScheduler (Chainlink) · Fee Dashboard
 
 *CopyM Platform — Confidential*
 
@@ -38,13 +40,22 @@
    - 7.1 Multi-source Price Aggregation & Valuation Registry
    - 7.2 Staleness Circuit Breakers (FRESH, WARNING, CRITICAL, STALE)
    - 7.3 Stake-based Dispute Resolution & Slashing Rules
-8. [Institutional Reality Checks & Gap Analysis](#8-institutional-reality-checks--gap-analysis)
-9. [Appendix: Core Smart Contract Code Snippets](#9-appendix-core-smart-contract-code-snippets)
-   - 9.1 Layer 1: Identity & Compliance (Gatekeeping)
-   - 9.2 Layer 2: Asset Management & RWA Plugins
-   - 9.3 Layer 3: Financial Layer & Vault Share Minting (Sync/Async Vaults)
-   - 9.4 Layer 3 Financials: FeeEngine & NAVOracle
-   - 9.5 Layer 4: Marketplace & Secondary Settlement
+   - 7.4 Per-Asset-Class Valuation Schedule (v7.0)
+8. [Section C: v7.0 Protocol Extensions](#8-section-c-v70-protocol-extensions)
+   - 8.1 Asset Plugin Registry (Multi-Class Support)
+   - 8.2 DisputeResolver — Standalone Resolution Contract
+   - 8.3 NAVScheduler — Chainlink Automation Keeper
+   - 8.4 Fee Dashboard View Layer
+   - 8.5 Interactive NAV & Dispute Workflow CLI
+9. [Institutional Reality Checks & Gap Analysis](#9-institutional-reality-checks--gap-analysis)
+10. [Appendix: Core Smart Contract Code Snippets](#10-appendix-core-smart-contract-code-snippets)
+    - 10.1 Layer 1: Identity & Compliance (Gatekeeping)
+    - 10.2 Layer 2: Asset Management & RWA Plugins
+    - 10.3 Layer 3: Financial Layer & Vault Share Minting (Sync/Async Vaults)
+    - 10.4 Layer 3 Financials: FeeEngine & NAVOracle
+    - 10.5 Layer 4: Marketplace & Secondary Settlement
+11. [Deployed Contract Registry (Sepolia)](#11-deployed-contract-registry-sepolia)
+12. [Changelog](#12-changelog)
 
 ---
 
@@ -428,16 +439,134 @@ Based on the time elapsed since the last NAV update, the asset transitions throu
 
 ### 7.3 Stake-based Dispute Resolution & Slashing Rules
 To ensure decentralized consensus and data integrity:
-1.  **Challenging NAV:** Anyone can file a challenge against a submitted NAV by locking a `challengeStakeAmount` in USDC.
+1.  **Challenging NAV:** Anyone can file a challenge against a submitted NAV by locking a `challengeStakeAmount` in USDC via `NAVOracle.fileChallenge()`.
 2.  **Dispute Window:** Resolvers have a `CHALLENGE_DEADLINE` (default: 7 days) to evaluate the challenge and evidence signatures.
-3.  **Resolution Outcomes:**
-    - **Challenger Wins:** The challenger's stake is refunded in full, the incorrect NAV is updated, and the submitter is penalized.
-    - **Submitter Wins:** The challenger's stake is slashed and transferred to the `insuranceReserve` or `protocolTreasury`.
-    - **Dispute Timeout:** If no resolution is submitted before the deadline, the dispute expires and the stake is returned to the challenger.
+3.  **Resolution Outcomes (v7.0 — via `DisputeResolver.sol`):**
+    - **Challenger Correct:** Stake refunded in full → optional USDC reward (configurable, default 0) → NAV updated to challenger's value.
+    - **Challenger Wrong:** Stake slashed to `protocolTreasury` → original NAV stands.
+    - **Dispute Timeout:** Stake returned to challenger via `expireDispute()`.
+4.  **Contract:** `DisputeResolver` holds `RESOLVER_ROLE` on `NAVOracle`. Resolvers call `DisputeResolver.resolveChallenge()` not `NAVOracle.resolveDispute()` directly.
+
+### 7.4 Per-Asset-Class Valuation Schedule (v7.0)
+
+The `NAVOracle` enforces distinct update frequencies per asset class, configured via `setAssetClassSchedule()`. The `NAVScheduler` keeper monitors and emits violations.
+
+| Asset Class | Max Interval | Warning Threshold | Valuation Method |
+|---|---|---|---|
+| `REAL_ESTATE` | 90 days | 75 days | Full Appraisal |
+| `CORPORATE_BOND` | 1 day | 1 day | Market Price |
+| `PRIVATE_CREDIT` | 30 days | 25 days | DCF Model |
+| `FINE_ART` | **365 days** | 330 days | Full Appraisal |
+
+Violation flow:
+```
+Current Date - lastValuationDate > maxValuationInterval
+  → NAVScheduler emits ScheduleViolation(assetId, assetClass, daysSince, maxDays)
+  → If STALE: enforceStalenessCircuitBreaker() → NAVOracle paused
+```
 
 ---
 
-## 8. Institutional Reality Checks & Gap Analysis
+## 8. Section C: v7.0 Protocol Extensions
+
+### 8.1 Asset Plugin Registry — Multi-Class Support
+
+The `AssetFactory` uses a plugin registry pattern (`mapping(bytes32 => address) public plugins`). Each asset class has a dedicated plugin contract that validates creation parameters and required documents.
+
+**Deployed Plugins (Sepolia):**
+| Plugin | Category ID | Address | Required Docs |
+|---|---|---|---|
+| `RealEstatePlugin` | `keccak256("REAL_ESTATE")` | `0xC5c3c0916f02119ed16E70a5970FABA692D77496` | TITLE_DEED + APPRAISAL |
+| `FineArtPlugin` *(v7.0)* | `keccak256("FINE_ART")` | `0x84887FF77a17Fd17c350E60ADbd54a25Abf0d8be` | AUTHENTICATION + INSURANCE |
+
+New plugins register via `AssetFactory.registerPlugin(categoryId, pluginAddress)`. Upgrades use `upgradePlugin(categoryId, newAddress)`.
+
+---
+
+### 8.2 DisputeResolver — Standalone Resolution Contract (v7.0)
+
+**Address (Sepolia):** `0xB69308E970967b2D5073f2Ed3904A816De5cb2e6`
+
+Standalone UUPS proxy. Holds `RESOLVER_ROLE` on `NAVOracle`. Provides clean separation between dispute state (in NAVOracle) and resolution logic.
+
+```
+disputeResolver.resolveChallenge(
+    bytes32 assetId,
+    uint256 resolvedValue,   // accepted NAV after review
+    bytes32 evidence,        // audit hash
+    bool challengerCorrect   // true = stake returned + optional reward
+)                            // false = stake slashed to protocolTreasury
+```
+
+**Reward configuration (admin only):**
+```
+disputeResolver.setRewardAmount(500_000_000)  // 500 USDC bonus, default = 0
+```
+
+---
+
+### 8.3 NAVScheduler — Chainlink Automation Keeper (v7.0)
+
+**Address (Sepolia):** `0xD3e9f677a20e1CF377a0f52E18bD8aecCd0A60aD`
+
+UUPS proxy implementing Chainlink Automation interface (`checkUpkeep` + `performUpkeep`). Monitors registered asset IDs and flags schedule violations.
+
+**Chainlink Registration:**
+1. Go to [automation.chain.link](https://automation.chain.link) on Sepolia
+2. Register new Upkeep → **Custom Logic**
+3. Target: `0xD3e9f677a20e1CF377a0f52E18bD8aecCd0A60aD`
+4. Fund with test LINK
+5. Add assets: `navScheduler.registerAsset(bytes32 assetId)`
+
+**Events (indexed for off-chain monitoring):**
+- `ScheduleViolation(assetId, assetClass, daysSince, maxDays)`
+- `NAVWarningEmitted(assetId, state, daysSince)`
+- `CircuitBreakerEnforced(assetId)`
+
+---
+
+### 8.4 Fee Dashboard View Layer (v7.0)
+
+`FeeEngine.getFeeDashboard(vaultAddress)` returns `FeeDashboardData` struct — single call replaces 8+ individual queries for frontend fee transparency (§4.6).
+
+**Frontend mapping:**
+```javascript
+const d = await feeEngine.getFeeDashboard(vaultAddress);
+// d.accruedManagementFee  — real-time accrued mgmt fee (18 dec)
+// d.pendingMgmtFees        — checkpointed undistributed mgmt
+// d.pendingPerfFees        — checkpointed undistributed perf
+// d.totalFeeRevenue        — total USDC in FeeEngine for vault
+// d.entryFeeBPS / 100      — entry fee %
+// d.exitFeeBPS / 100       — exit fee %
+// d.mgmtFeeBPS / 100       — annual management fee %
+// d.perfFeeBPS / 100       — performance fee %
+// d.highWaterMarkNAV       — HWM NAV per share (18 dec)
+// d.hasPendingConfigChange — true if fee change is queued
+// d.pendingConfigExecuteAt — Unix timestamp when change goes live
+```
+
+---
+
+### 8.5 Interactive NAV & Dispute Workflow CLI (v7.0)
+
+To simplify operations, validation, and testing of the NAV update frequency and dispute resolution lifecycle, an interactive CLI tool is built into the protocol's development suite.
+
+**Location:** `scripts/nav-cli.js`
+
+**Main Operations Supported:**
+1. **Real-time Status Dashboard:** Aggregates and prints active NAV values, valuation dates, valuation methods used, warning/critical intervals, active dispute parameters, and locked USDC stakes.
+2. **Upkeep Simulation:** Performs the off-chain keeper validation logic (`checkUpkeep`) and submits simulated on-chain executions (`performUpkeep`).
+3. **Dispute Lifecycle Testing:** Simulates user filing of disputes (locks stakes, signs data on-chain using the Ethers signer, and fires `fileChallenge`) and admin dispute resolution (triggers standalone `DisputeResolver.resolveChallenge` with correct/slashed stake payouts).
+4. **Schedule Setups:** Initializes and configures the default schedules for `REAL_ESTATE`, `CORPORATE_BOND`, `PRIVATE_CREDIT`, and `FINE_ART` in a single command.
+
+**Execution:**
+```bash
+npm run cli:nav <sepolia | localhost>
+```
+
+---
+
+## 9. Institutional Reality Checks & Gap Analysis
 
 1.  **Regulatory Role Accountability:** The regulator roles in `AssetToken.sol` (e.g. `forceTransfer` capability) must be mapped to multi-sig addresses managed by designated legal compliance entities, rather than a single admin private key.
 2.  **Sanctions Oracle Integration:** While `IdentityRegistry` enforces static KYC check dates, a live compliance integration requires a continuous sanctions scanner oracle (e.g. Chainlink/Sumsub integration) to dynamically trigger address freezing on-chain.
@@ -778,3 +907,65 @@ function initiateSettlement(
     emit SettlementInitiated(settlementId, msg.sender, to, assetToken, paymentToken, assetAmount, paymentAmount);
 }
 ```
+
+---
+
+## 11. Deployed Contract Registry (Sepolia)
+
+> Last updated: **v7.0.0 — 2026-06-30**
+
+### Layer 1 — Identity
+| Contract | Address |
+|---|---|
+| KYCProvidersRegistry | `0xb4C0CD81eA49Dc4AC94472004955C7EE9f99Dc5c` |
+| IdentitySBT | `0x5e88d8a83dE2F46F6809BaA06299f5113f3607A7` |
+| IdentityRegistry | `0xA8605BBF965973f324C3f51F4d7121900d7F732D` |
+| ComplianceModule | `0xE48e8F4bd7473eC62Bb72C0114316Fa30437ab8e` |
+| TravelRuleModule | `0x962f9f55364F6b0b5A10d02C9d44873D62392F60` |
+| InvestorRightsRegistry | `0xe30315BbE4B32F40662A4A405aa0ad23F86859c5` |
+
+### Layer 2 — Asset Tokenization
+| Contract | Address |
+|---|---|
+| CircuitBreakerModule | `0x010de9e1Cb69Dbf10ea25b2267538Ecb055d28A6` |
+| AssetToken (template) | `0x2AED4bd6C552CEd0300cE29CAfB41453430A8191` |
+| AssetFactory | `0xeCd44390e9fC54d6f25726b7076FA5F601695F05` |
+| AssetRegistry | `0xb103311FFe01849201E892d07E984ad2A17ED62f` |
+| RealEstatePlugin | `0xC5c3c0916f02119ed16E70a5970FABA692D77496` |
+| **FineArtPlugin** *(v7.0)* | `0x84887FF77a17Fd17c350E60ADbd54a25Abf0d8be` |
+
+### Layer 3 — Financial
+| Contract | Address |
+|---|---|
+| SyncVault (template) | `0xA89153E7bcDDb44FB12788e1601A578B0146D831` |
+| VaultFactory | `0x5759Aa4c0814D9D7e09043711462eE9C4362C921` |
+| YieldDistributor | `0xeE155a2DEeA1b4Fa4eEC51eA1b76343fd1BEA449` |
+| FeeEngine | `0xB9E9B4Ff39def237BEcDE33ff80289340cA75Eaa` |
+| NAVOracle | `0xd23Ad18c8Db21A79E48e18D8f1aF085999d57867` |
+| **DisputeResolver** *(v7.0)* | `0xB69308E970967b2D5073f2Ed3904A816De5cb2e6` |
+| **NAVScheduler** *(v7.0)* | `0xD3e9f677a20e1CF377a0f52E18bD8aecCd0A60aD` |
+| Mock USDC | `0xf3f6f980917e9304D8dC9828A463BDf4b59239D4` |
+| Mock USDT | `0x855BeB487504596AAf75dE0Edc4EB70270FcB68A` |
+
+### Layer 4 — Marketplace
+| Contract | Address |
+|---|---|
+| MarketplaceFactory | `0x86e02A6535a809569B5F6f9425522e789CdAE532` |
+| OrderBookEngine | `0xa8090358bA2d36967b7957c34c43b593639f3703` |
+| SettlementEngine | `0xff6d0890a0c61AbE96D005D606e99119dFA39446` |
+| ClearingHouse | `0xB4fb98E1654820c085F806BcEE1d48B2432EE0a6` |
+| PriceOracle | `0xc40D52C787Db4DFF42572db9941E76Fc5Dc18f2a` |
+
+---
+
+## 12. Changelog
+
+| Version | Date | Summary |
+|---|---|---|
+| v1.0.0 | — | Initial Layer 1 identity & compliance |
+| v2.0.0 | — | Layer 2 asset tokenization (ERC-3643) |
+| v3.0.0 | — | Layer 3 vaults (ERC-4626 SyncVault) |
+| v4.0.0 | — | Async vault (EIP-7540) |
+| v5.0.0 | — | Layer 4 marketplace (OrderBook, Settlement, ClearingHouse) |
+| v6.0.0 | 2026-06-25 | NAVOracle UUPS upgrade, FeeEngine v6, BOR integration, marketplace config |
+| **v7.0.0** | **2026-06-30** | FineArtPlugin deployed & registered; DisputeResolver standalone proxy; NAVScheduler + Chainlink Automation interface; 4 asset class schedules on-chain; FeeEngine `getFeeDashboard()` view |
