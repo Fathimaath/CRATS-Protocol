@@ -10,6 +10,8 @@ import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
 import "../interfaces/standards/IERC7540.sol";
 import "../interfaces/identity/IIdentityRegistry.sol";
+import "../interfaces/compliance/ICompliance.sol";
+import "../interfaces/asset/IAssetRegistry.sol";
 import "./BaseVault.sol";
 
 /**
@@ -43,6 +45,7 @@ contract AsyncVault is
     address public complianceModule;
     bytes32 public category;
     uint256 public settlementPeriod;
+    bool public isClosed;
     bytes32 public constant OPERATOR_ROLE = keccak256("OPERATOR_ROLE");
     bytes32 public constant FULFILLER_ROLE = keccak256("FULFILLER_ROLE");
 
@@ -95,6 +98,7 @@ contract AsyncVault is
     // === ERC-7540 Async Logic ===
 
     function requestDeposit(uint256 assets, address controller, address owner) external override nonReentrant returns (uint256 requestId) {
+        require(!isClosed, "Vault: closed");
         require(assets > 0, "ZERO_ASSETS");
         require(owner == msg.sender || isOperator(owner, msg.sender), "unauthorized");
         IERC20(asset()).safeTransferFrom(owner, address(this), assets);
@@ -112,8 +116,24 @@ contract AsyncVault is
     }
 
     function requestRedeem(uint256 shares, address controller, address owner) external override nonReentrant returns (uint256 requestId) {
+        require(!isClosed, "Vault: closed");
         require(shares > 0, "ZERO_SHARES");
         require(owner == msg.sender || isOperator(owner, msg.sender), "unauthorized");
+        if (address(assetRegistry) != address(0)) {
+            bool enabled = true;
+            try IAssetRegistry(address(assetRegistry)).getAssetRedemptionConfig(asset()) returns (bool _enabled) {
+                enabled = _enabled;
+            } catch {}
+            require(enabled, "AsyncVault: Redemption not enabled");
+        }
+        if (complianceModule != address(0)) {
+            bool restricted = false;
+            try ICompliance(complianceModule).isInvestorRestricted(asset(), owner) returns (bool _restricted) {
+                restricted = _restricted;
+            } catch {}
+            require(!restricted, "AsyncVault: Holder restricted");
+        }
+
         _transfer(owner, address(this), shares);
         _pendingRedeem[controller] += shares;
         _totalPendingRedeemShares += shares;
@@ -129,6 +149,7 @@ contract AsyncVault is
     }
 
     function fulfillDeposit(address controller, uint256 assets) external onlyRole(FULFILLER_ROLE) {
+        require(!isClosed, "Vault: closed");
         uint256 shares = convertToShares(assets);
         _mint(address(this), shares);
         _claimableDeposit[controller].assets += assets;
@@ -138,6 +159,22 @@ contract AsyncVault is
     }
 
     function fulfillRedeem(address controller, uint256 shares) external onlyRole(FULFILLER_ROLE) {
+        require(!isClosed, "Vault: closed");
+        if (address(assetRegistry) != address(0)) {
+            bool enabled = true;
+            try IAssetRegistry(address(assetRegistry)).getAssetRedemptionConfig(asset()) returns (bool _enabled) {
+                enabled = _enabled;
+            } catch {}
+            require(enabled, "AsyncVault: Redemption not enabled");
+        }
+        if (complianceModule != address(0)) {
+            bool restricted = false;
+            try ICompliance(complianceModule).isInvestorRestricted(asset(), controller) returns (bool _restricted) {
+                restricted = _restricted;
+            } catch {}
+            require(!restricted, "AsyncVault: Holder restricted");
+        }
+
         uint256 assets = convertToAssets(shares);
         _claimableRedeem[controller].shares += shares;
         _claimableRedeem[controller].assets += assets;
@@ -148,6 +185,7 @@ contract AsyncVault is
     // Consolidated overrides for overlapping signatures between 4626 and 7540
 
     function deposit(uint256 assets, address receiver, address controller) public override(IERC7540) nonReentrant returns (uint256 shares) {
+        require(!isClosed, "Vault: closed");
         require(assets > 0, "Must claim nonzero amount");
         require(controller == msg.sender || isOperator(controller, msg.sender), "unauthorized");
         InternalClaim storage cl = _claimableDeposit[controller];
@@ -159,6 +197,22 @@ contract AsyncVault is
     }
 
     function redeem(uint256 shares, address receiver, address controller) public override(ERC4626Upgradeable, IERC7540) nonReentrant returns (uint256 assets) {
+        require(!isClosed, "Vault: closed");
+        if (address(assetRegistry) != address(0)) {
+            bool enabled = true;
+            try IAssetRegistry(address(assetRegistry)).getAssetRedemptionConfig(asset()) returns (bool _enabled) {
+                enabled = _enabled;
+            } catch {}
+            require(enabled, "AsyncVault: Redemption not enabled");
+        }
+        if (complianceModule != address(0)) {
+            bool restricted = false;
+            try ICompliance(complianceModule).isInvestorRestricted(asset(), controller) returns (bool _restricted) {
+                restricted = _restricted;
+            } catch {}
+            require(!restricted, "AsyncVault: Holder restricted");
+        }
+
         require(shares > 0, "Must claim nonzero shares");
         require(controller == msg.sender || isOperator(controller, msg.sender), "unauthorized");
         InternalClaim storage cl = _claimableRedeem[controller];
@@ -250,5 +304,15 @@ contract AsyncVault is
     function emergencyWithdraw(uint256 amount, address to) external onlyRole(DEFAULT_ADMIN_ROLE) {
         require(to != address(0), "invalid to address");
         IERC20(asset()).safeTransfer(to, amount);
+    }
+
+    function closeVault() external {
+        require(hasRole(DEFAULT_ADMIN_ROLE, msg.sender), "Vault: unauthorized");
+        isClosed = true;
+    }
+
+    function burnShares(address account, uint256 amount) external {
+        require(hasRole(DEFAULT_ADMIN_ROLE, msg.sender), "Vault: unauthorized");
+        _burn(account, amount);
     }
 }

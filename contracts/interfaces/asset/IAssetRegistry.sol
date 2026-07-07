@@ -115,4 +115,22 @@ interface IAssetRegistry {
     function getTotalClaim(address assetToken, address investor) external view returns (uint256 totalAptClaim, uint256 totalBps);
     function getVaultSummary(address assetToken, address vault) external view returns (VaultSummary memory);
     function validateInvariant(address assetToken, address vault) external view returns (bool isValid, uint256 delta);
+
+    // === Redemption Configuration ===
+    event OverrideProposed(address indexed assetToken, bool newValue, uint256 executeAt);
+    event OverrideCancelled(address indexed assetToken);
+    event RedemptionPolicyOverridden(
+        address indexed assetToken,
+        bool oldValue,
+        bool newValue,
+        address indexed executor,
+        uint256 timestamp
+    );
+
+    function setAssetRedemptionConfig(address assetToken, bool enabled) external;
+    function getAssetRedemptionConfig(address assetToken) external view returns (bool);
+    function hasPendingRestrictiveOverride(address assetToken) external view returns (bool);
+    function proposeOverride(address assetToken, bool newValue) external;
+    function executeOverride(address assetToken) external;
+    function cancelOverride(address assetToken) external;
 }

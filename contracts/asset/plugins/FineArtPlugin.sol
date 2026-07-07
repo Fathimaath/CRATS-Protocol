@@ -7,7 +7,28 @@ import "../../interfaces/asset/IAssetPlugin.sol";
  * @title FineArtPlugin
  * @dev Plugin for tokenizing Fine Art assets.
  */
-contract FineArtPlugin is IAssetPlugin {
+import "@openzeppelin/contracts/access/Ownable.sol";
+
+contract FineArtPlugin is IAssetPlugin, Ownable {
+    bool private _defaultEnabled;
+    bool private _issuerCanOverride;
+
+    event RedemptionPolicyUpdated(bool defaultEnabled, bool issuerCanOverride);
+
+    constructor() Ownable(msg.sender) {
+        _defaultEnabled = true;
+        _issuerCanOverride = true;
+    }
+
+    function redemptionPolicy() external view override returns (bool defaultEnabled, bool issuerCanOverride) {
+        return (_defaultEnabled, _issuerCanOverride);
+    }
+
+    function updateRedemptionPolicy(bool defaultEnabled, bool issuerCanOverride) external onlyOwner {
+        _defaultEnabled = defaultEnabled;
+        _issuerCanOverride = issuerCanOverride;
+        emit RedemptionPolicyUpdated(defaultEnabled, issuerCanOverride);
+    }
     bytes32 public constant CATEGORY_ID = keccak256("FINE_ART");
     string public constant CATEGORY_NAME = "Fine Art";
 

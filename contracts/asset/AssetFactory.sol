@@ -58,6 +58,7 @@ contract AssetFactory is
     address[] public allAssets;
 
     event AssetDeployed(address indexed token, address indexed issuer, bytes32 category);
+    event AssetCategoryRegistered(bytes32 indexed category, address indexed plugin, uint256 timestamp);
 
     /// @custom:oz-upgrades-unsafe-allow constructor
     constructor() {
@@ -101,6 +102,7 @@ contract AssetFactory is
     function registerPlugin(bytes32 category, address plugin) external onlyRole(DEFAULT_ADMIN_ROLE) {
         plugins[category] = plugin;
         emit PluginRegistered(category, plugin);
+        emit AssetCategoryRegistered(category, plugin, block.timestamp);
     }
 
     function upgradePlugin(bytes32 category, address newPlugin) external override onlyRole(DEFAULT_ADMIN_ROLE) {
@@ -128,14 +130,23 @@ contract AssetFactory is
     // ASSET DEPLOYMENT
     // ═══════════════════════════════════════════════════════════
 
-    function deployAsset(
+    function _deployAsset(
         string memory name,
         string memory symbol,
         uint256 initialSupply,
-        bytes32 category
-    ) external nonReentrant returns (address) {
+        bytes32 category,
+        bool enableRedemption
+    ) internal returns (address) {
         require(isIssuerApproved[_msgSender()], "AssetFactory: issuer not approved");
-        require(plugins[category] != address(0), "AssetFactory: category plugin not found");
+        address plugin = plugins[category];
+        require(plugin != address(0), "AssetFactory: category plugin not found");
+
+        // Resolve platform default and override rules
+        (bool defaultEnabled, bool issuerCanOverride) = IAssetPlugin(plugin).redemptionPolicy();
+        bool finalRedemptionEnabled = defaultEnabled;
+        if (issuerCanOverride) {
+            finalRedemptionEnabled = enableRedemption;
+        }
 
         // ─── Issuance Fee (§2.1) ────────────────────────────
         if (issuanceFeeBPS > 0 && address(usdc) != address(0) && protocolTreasury != address(0)) {
@@ -149,7 +160,7 @@ contract AssetFactory is
             initialSupply: initialSupply,
             categoryId: category
         });
-        require(IAssetPlugin(plugins[category]).validateCreation(_msgSender(), params), "AssetFactory: plugin validation failed");
+        require(IAssetPlugin(plugin).validateCreation(_msgSender(), params), "AssetFactory: plugin validation failed");
 
         bytes memory initData = abi.encodeWithSelector(
             IAssetToken.initialize.selector,
@@ -174,8 +185,35 @@ contract AssetFactory is
         });
         allAssets.push(token);
 
+        // Store redemption config in Asset Registry
+        if (assetRegistry != address(0)) {
+            IAssetRegistry(assetRegistry).setAssetRedemptionConfig(token, finalRedemptionEnabled);
+        }
+
         emit AssetDeployed(token, _msgSender(), category);
         return token;
+    }
+
+    function deployAsset(
+        string memory name,
+        string memory symbol,
+        uint256 initialSupply,
+        bytes32 category
+    ) external nonReentrant returns (address) {
+        address plugin = plugins[category];
+        require(plugin != address(0), "AssetFactory: category plugin not found");
+        (bool defaultEnabled, ) = IAssetPlugin(plugin).redemptionPolicy();
+        return _deployAsset(name, symbol, initialSupply, category, defaultEnabled);
+    }
+
+    function deployAsset(
+        string memory name,
+        string memory symbol,
+        uint256 initialSupply,
+        bytes32 category,
+        bool enableRedemption
+    ) external nonReentrant returns (address) {
+        return _deployAsset(name, symbol, initialSupply, category, enableRedemption);
     }
 
     // === Logic Overrides (Compatibility with IAssetFactory) ===

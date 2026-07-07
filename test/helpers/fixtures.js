@@ -539,6 +539,7 @@ module.exports = {
   deployUpgradeable,
   deployUpgradeableFQ,
   deployLayer1Fixtures,
+  deployAndInitializeLayer1,
   deployLayer2Fixtures,
   deployLayer3Templates,
   deployAndInitializeLayer3,

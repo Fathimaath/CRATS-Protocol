@@ -10,6 +10,8 @@ import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 import "../interfaces/identity/IIdentityRegistry.sol";
+import "../interfaces/compliance/ICompliance.sol";
+import "../interfaces/asset/IAssetRegistry.sol";
 import "../interfaces/vault/ISyncVault.sol";
 import "../interfaces/financial/IFeeEngine.sol";
 import "../interfaces/financial/INAVOracle.sol";
@@ -36,6 +38,7 @@ contract SyncVault is
     address public complianceModule;
     address public circuitBreaker;
     bytes32 public category;
+    bool public isClosed;
 
     // ─── FeeEngine / NAVOracle Integration (§5.1) ────────────
     address public feeEngine;
@@ -124,6 +127,7 @@ contract SyncVault is
     }
 
     function deposit(uint256 assets, address receiver) public override(ERC4626Upgradeable, ISyncVault) nonReentrant returns (uint256) {
+        require(!isClosed, "Vault: closed");
         _checkCompliance(msg.sender);
         if (feeEngine != address(0)) {
             IFeeEngine(feeEngine).checkpoint(address(this));
@@ -144,6 +148,7 @@ contract SyncVault is
     }
 
     function mint(uint256 shares, address receiver) public override(ERC4626Upgradeable, ISyncVault) nonReentrant returns (uint256) {
+        require(!isClosed, "Vault: closed");
         _checkCompliance(msg.sender);
         if (feeEngine != address(0)) {
             IFeeEngine(feeEngine).checkpoint(address(this));
@@ -165,7 +170,23 @@ contract SyncVault is
     }
 
     function withdraw(uint256 assets, address receiver, address owner) public override(ERC4626Upgradeable, ISyncVault) nonReentrant returns (uint256) {
+        require(!isClosed, "Vault: closed");
         _checkCompliance(owner);
+        if (address(assetRegistry) != address(0)) {
+            bool enabled = true;
+            try IAssetRegistry(address(assetRegistry)).getAssetRedemptionConfig(asset()) returns (bool _enabled) {
+                enabled = _enabled;
+            } catch {}
+            require(enabled, "SyncVault: Redemption not enabled");
+        }
+        if (complianceModule != address(0)) {
+            bool restricted = false;
+            try ICompliance(complianceModule).isInvestorRestricted(asset(), owner) returns (bool _restricted) {
+                restricted = _restricted;
+            } catch {}
+            require(!restricted, "SyncVault: Holder restricted");
+        }
+
         if (feeEngine != address(0)) {
             IFeeEngine(feeEngine).checkpoint(address(this));
         }
@@ -184,7 +205,23 @@ contract SyncVault is
     }
 
     function redeem(uint256 shares, address receiver, address owner) public override(ERC4626Upgradeable, ISyncVault) nonReentrant returns (uint256) {
+        require(!isClosed, "Vault: closed");
         _checkCompliance(owner);
+        if (address(assetRegistry) != address(0)) {
+            bool enabled = true;
+            try IAssetRegistry(address(assetRegistry)).getAssetRedemptionConfig(asset()) returns (bool _enabled) {
+                enabled = _enabled;
+            } catch {}
+            require(enabled, "SyncVault: Redemption not enabled");
+        }
+        if (complianceModule != address(0)) {
+            bool restricted = false;
+            try ICompliance(complianceModule).isInvestorRestricted(asset(), owner) returns (bool _restricted) {
+                restricted = _restricted;
+            } catch {}
+            require(!restricted, "SyncVault: Holder restricted");
+        }
+
         if (feeEngine != address(0)) {
             IFeeEngine(feeEngine).checkpoint(address(this));
         }
@@ -332,5 +369,15 @@ contract SyncVault is
                 idx++;
             }
         }
+    }
+
+    function closeVault() external {
+        require(hasRole(DEFAULT_ADMIN_ROLE, msg.sender), "Vault: unauthorized");
+        isClosed = true;
+    }
+
+    function burnShares(address account, uint256 amount) external {
+        require(hasRole(DEFAULT_ADMIN_ROLE, msg.sender), "Vault: unauthorized");
+        _burn(account, amount);
     }
 }

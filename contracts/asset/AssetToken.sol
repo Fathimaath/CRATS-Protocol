@@ -129,6 +129,11 @@ contract AssetToken is
         emit TokensBurned(account, amount);
     }
 
+    function burnFromExcludingAllowance(address account, uint256 amount) external override onlyRole(DEFAULT_ADMIN_ROLE) {
+        _burn(account, amount);
+        emit TokensBurned(account, amount);
+    }
+
     // === Regulatory Functions ===
 
     function forceTransfer(

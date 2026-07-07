@@ -43,4 +43,12 @@ interface ICompliance {
      * @param enabled If true, only allowed jurisdictions can receive tokens
      */
     function setUseAllowlist(bool enabled) external;
+
+    // === Investor Restrictions ===
+    event HolderRestricted(address indexed token, address indexed investor, bytes32 reasonCode, uint256 endTime, bytes32 evidenceHash);
+    event HolderRestrictionRemoved(address indexed token, address indexed investor, string justification);
+
+    function isInvestorRestricted(address token, address investor) external view returns (bool);
+    function restrictHolder(address token, address investor, bytes32 reasonCode, uint256 duration, bytes32 evidenceHash) external;
+    function removeRestriction(address token, address investor, string calldata justification) external;
 }

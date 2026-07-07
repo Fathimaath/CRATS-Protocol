@@ -8,7 +8,28 @@ import "../../interfaces/asset/IAssetPlugin.sol";
  * @dev Plugin for tokenizing Real Estate assets.
  * // Source: Audited RWA Plugin Patterns
  */
-contract RealEstatePlugin is IAssetPlugin {
+import "@openzeppelin/contracts/access/Ownable.sol";
+
+contract RealEstatePlugin is IAssetPlugin, Ownable {
+    bool private _defaultEnabled;
+    bool private _issuerCanOverride;
+
+    event RedemptionPolicyUpdated(bool defaultEnabled, bool issuerCanOverride);
+
+    constructor() Ownable(msg.sender) {
+        _defaultEnabled = false;
+        _issuerCanOverride = false;
+    }
+
+    function redemptionPolicy() external view override returns (bool defaultEnabled, bool issuerCanOverride) {
+        return (_defaultEnabled, _issuerCanOverride);
+    }
+
+    function updateRedemptionPolicy(bool defaultEnabled, bool issuerCanOverride) external onlyOwner {
+        _defaultEnabled = defaultEnabled;
+        _issuerCanOverride = issuerCanOverride;
+        emit RedemptionPolicyUpdated(defaultEnabled, issuerCanOverride);
+    }
     bytes32 public constant CATEGORY_ID = keccak256("REAL_ESTATE");
     string public constant CATEGORY_NAME = "Real Estate";
 

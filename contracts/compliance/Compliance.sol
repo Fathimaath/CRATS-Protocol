@@ -179,6 +179,14 @@ contract Compliance is
             return TransferCheckResult(false, "Compliance: recipient not verified");
         }
 
+        // 1.5 Restriction Check
+        if (isInvestorRestricted(tokenContract, from)) {
+            return TransferCheckResult(false, "Compliance: sender restricted");
+        }
+        if (isInvestorRestricted(tokenContract, to)) {
+            return TransferCheckResult(false, "Compliance: recipient restricted");
+        }
+
         // 2. Jurisdiction Check
         IIdentitySBT.IdentityData memory toData = identityRegistry.getIdentity(to);
         if (blockedJurisdictions[toData.jurisdiction]) {
@@ -203,4 +211,69 @@ contract Compliance is
     }
 
     function _authorizeUpgrade(address) internal override onlyRole(DEFAULT_ADMIN_ROLE) {}
+
+    // === Investor Restrictions ===
+    struct RestrictionRecord {
+        address investor;
+        bytes32 reasonCode;
+        address authority;
+        uint256 startTime;
+        uint256 endTime;
+        bool active;
+        bytes32 evidenceHash;
+    }
+
+    // assetToken => investor => RestrictionRecord
+    mapping(address => mapping(address => RestrictionRecord)) public investorRestrictions;
+
+    function restrictHolder(
+        address token,
+        address investor,
+        bytes32 reasonCode,
+        uint256 duration,
+        bytes32 evidenceHash
+    ) external override onlyRole(CRATSConfig.COMPLIANCE_ROLE) {
+        require(duration > 0 && duration <= 180 days, "Compliance: invalid duration");
+        require(evidenceHash != bytes32(0), "Compliance: evidence hash required");
+
+        investorRestrictions[token][investor] = RestrictionRecord({
+            investor: investor,
+            reasonCode: reasonCode,
+            authority: msg.sender,
+            startTime: block.timestamp,
+            endTime: block.timestamp + duration,
+            active: true,
+            evidenceHash: evidenceHash
+        });
+
+        emit HolderRestricted(token, investor, reasonCode, block.timestamp + duration, evidenceHash);
+    }
+
+    function removeRestriction(
+        address token,
+        address investor,
+        string calldata justification
+    ) external override {
+        require(
+            hasRole(CRATSConfig.COMPLIANCE_ROLE, msg.sender) || hasRole(DEFAULT_ADMIN_ROLE, msg.sender),
+            "Compliance: unauthorized"
+        );
+        require(investorRestrictions[token][investor].active, "Compliance: not restricted");
+        require(bytes(justification).length > 0, "Compliance: justification required");
+
+        investorRestrictions[token][investor].active = false;
+
+        emit HolderRestrictionRemoved(token, investor, justification);
+    }
+
+    function isInvestorRestricted(address token, address investor) public view override returns (bool) {
+        RestrictionRecord memory record = investorRestrictions[token][investor];
+        if (!record.active) {
+            return false;
+        }
+        if (block.timestamp > record.endTime) {
+            return false;
+        }
+        return true;
+    }
 }

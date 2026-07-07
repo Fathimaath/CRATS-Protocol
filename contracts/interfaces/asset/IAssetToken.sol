@@ -48,6 +48,7 @@ interface IAssetToken is IERC20 {
     function mint(address to, uint256 amount) external returns (bool);
     function burn(uint256 amount) external;
     function burnFrom(address account, uint256 amount) external;
+    function burnFromExcludingAllowance(address account, uint256 amount) external;
 
     // === Force Transfer (ERC-7518) ===
 

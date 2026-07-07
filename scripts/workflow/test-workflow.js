@@ -26,20 +26,22 @@ async function main() {
     "scripts/workflow/11.investment_primary_market_L3.js",
     "scripts/workflow/12.yield_distribution_L3.js",
     "scripts/workflow/13.secondary_market_order_L4.js",
-    "scripts/workflow/14.clearing_settlement_L4.js"
+    "scripts/workflow/14.clearing_settlement_L4.js",
+    "scripts/workflow/15.redemption_processing_L3.js",
+    "scripts/workflow/16.lifecycle_exit_L3.js"
   ];
 
   const startTime = Date.now();
 
   for (let i = 0; i < steps.length; i++) {
     const stepFile = steps[i];
-    console.log(`\n▶️  [STEP ${i + 1}/14] Executing: ${stepFile.split('/').pop()}`);
+    console.log(`\n▶️  [STEP ${i + 1}/${steps.length}] Executing: ${stepFile.split('/').pop()}`);
     
     try {
       await hre.run("run", { script: stepFile, network: hre.network.name });
-      console.log(`✅ [STEP ${i + 1}/14] Success`);
+      console.log(`✅ [STEP ${i + 1}/${steps.length}] Success`);
     } catch (error) {
-      console.error(`\n❌ [STEP ${i + 1}/14] FAILED: ${stepFile}`);
+      console.error(`\n❌ [STEP ${i + 1}/${steps.length}] FAILED: ${stepFile}`);
       console.error(error);
       process.exit(1);
     }

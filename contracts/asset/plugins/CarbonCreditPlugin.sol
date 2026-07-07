@@ -7,7 +7,28 @@ import "../../interfaces/asset/IAssetPlugin.sol";
  * @title CarbonCreditPlugin
  * @dev Plugin for tokenizing Carbon Credit assets.
  */
-contract CarbonCreditPlugin is IAssetPlugin {
+import "@openzeppelin/contracts/access/Ownable.sol";
+
+contract CarbonCreditPlugin is IAssetPlugin, Ownable {
+    bool private _defaultEnabled;
+    bool private _issuerCanOverride;
+
+    event RedemptionPolicyUpdated(bool defaultEnabled, bool issuerCanOverride);
+
+    constructor() Ownable(msg.sender) {
+        _defaultEnabled = false;
+        _issuerCanOverride = false;
+    }
+
+    function redemptionPolicy() external view override returns (bool defaultEnabled, bool issuerCanOverride) {
+        return (_defaultEnabled, _issuerCanOverride);
+    }
+
+    function updateRedemptionPolicy(bool defaultEnabled, bool issuerCanOverride) external onlyOwner {
+        _defaultEnabled = defaultEnabled;
+        _issuerCanOverride = issuerCanOverride;
+        emit RedemptionPolicyUpdated(defaultEnabled, issuerCanOverride);
+    }
     bytes32 public constant CATEGORY_ID = keccak256("CARBON_CREDIT");
     string public constant CATEGORY_NAME = "Carbon Credit";
 

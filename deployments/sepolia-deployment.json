@@ -11,11 +11,11 @@
     "travelRuleModule": "0x962f9f55364F6b0b5A10d02C9d44873D62392F60",
     "investorRightsRegistry": "0xe30315BbE4B32F40662A4A405aa0ad23F86859c5",
     "circuitBreaker": "0x010de9e1Cb69Dbf10ea25b2267538Ecb055d28A6",
-    "assetTokenTemplate": "0x2AED4bd6C552CEd0300cE29CAfB41453430A8191",
+    "assetTokenTemplate": "0xD1aB6DAC41cC010aE4a6f858824a55BFDF59A70a",
     "assetFactory": "0xeCd44390e9fC54d6f25726b7076FA5F601695F05",
     "assetRegistry": "0xb103311FFe01849201E892d07E984ad2A17ED62f",
     "realEstatePlugin": "0xC5c3c0916f02119ed16E70a5970FABA692D77496",
-    "syncVaultTemplate": "0xA89153E7bcDDb44FB12788e1601A578B0146D831",
+    "syncVaultTemplate": "0x0EE0148e90F05478E524967C3322AdB5761D4C5E",
     "vaultFactory": "0x5759Aa4c0814D9D7e09043711462eE9C4362C921",
     "yieldDistributor": "0xeE155a2DEeA1b4Fa4eEC51eA1b76343fd1BEA449",
     "usdc": "0xf3f6f980917e9304D8dC9828A463BDf4b59239D4",
@@ -37,6 +37,9 @@
     "navScheduler": "0xD3e9f677a20e1CF377a0f52E18bD8aecCd0A60aD",
     "resolverRoleGranted": true,
     "schedulerAdminGranted": true,
-    "navSchedulesInitialized": true
+    "navSchedulesInitialized": true,
+    "asyncVaultTemplate": "0x14CCb54eCD80a1C13E3B4757F82f7e5D2b0E3E1F",
+    "redemptionManager": "0x6D728934aCA64f45B98fE4e07aF6Bbe1C8956F52",
+    "lifecycleExitManager": "0xC8af899eac24F755704a1ad287fCe62b77929a6c"
   }
 }

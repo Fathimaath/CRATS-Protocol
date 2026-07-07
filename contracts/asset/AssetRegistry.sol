@@ -444,6 +444,76 @@ contract AssetRegistry is
         isValid = sumClaims == vaultTotal;
         delta = sumClaims > vaultTotal ? sumClaims - vaultTotal : vaultTotal - sumClaims;
     }
+
+    // === Redemption Configuration State ===
+    struct PendingOverride {
+        bool newValue;
+        uint256 executeAt;
+        bool exists;
+    }
+
+    mapping(address => bool) private _assetRedemptionEnabled;
+    mapping(address => bool) private _assetRedemptionInitialized;
+    mapping(address => PendingOverride) public pendingOverrides;
+
+    uint256 public constant TIMELOCK_DELAY = 48 hours;
+
+    function setAssetRedemptionConfig(address assetToken, bool enabled) external override {
+        require(isOperator[msg.sender] || hasRole(DEFAULT_ADMIN_ROLE, msg.sender), "AssetRegistry: unauthorized");
+        if (!hasRole(DEFAULT_ADMIN_ROLE, msg.sender)) {
+            require(!_assetRedemptionInitialized[assetToken], "AssetRegistry: config already set");
+        }
+        _assetRedemptionEnabled[assetToken] = enabled;
+        _assetRedemptionInitialized[assetToken] = true;
+    }
+
+    function getAssetRedemptionConfig(address assetToken) external view override returns (bool) {
+        require(_assetRedemptionInitialized[assetToken], "AssetRegistry: config not set");
+        return _assetRedemptionEnabled[assetToken];
+    }
+
+    function hasPendingRestrictiveOverride(address assetToken) public view override returns (bool) {
+        PendingOverride memory pending = pendingOverrides[assetToken];
+        if (!pending.exists) {
+            return false;
+        }
+        bool currentVal = _assetRedemptionEnabled[assetToken];
+        // Restrictive change means: current value is true, proposed value is false
+        return (currentVal == true && pending.newValue == false);
+    }
+
+    function proposeOverride(address assetToken, bool newValue) external override onlyRole(DEFAULT_ADMIN_ROLE) {
+        require(_assetRedemptionInitialized[assetToken], "AssetRegistry: config not set");
+        bool currentVal = _assetRedemptionEnabled[assetToken];
+        require(currentVal != newValue, "AssetRegistry: no value change");
+
+        pendingOverrides[assetToken] = PendingOverride({
+            newValue: newValue,
+            executeAt: block.timestamp + TIMELOCK_DELAY,
+            exists: true
+        });
+
+        emit OverrideProposed(assetToken, newValue, block.timestamp + TIMELOCK_DELAY);
+    }
+
+    function executeOverride(address assetToken) external override onlyRole(DEFAULT_ADMIN_ROLE) {
+        PendingOverride memory pending = pendingOverrides[assetToken];
+        require(pending.exists, "AssetRegistry: no pending override");
+        require(block.timestamp >= pending.executeAt, "AssetRegistry: timelock not expired");
+
+        bool oldValue = _assetRedemptionEnabled[assetToken];
+        _assetRedemptionEnabled[assetToken] = pending.newValue;
+
+        delete pendingOverrides[assetToken];
+
+        emit RedemptionPolicyOverridden(assetToken, oldValue, pending.newValue, msg.sender, block.timestamp);
+    }
+
+    function cancelOverride(address assetToken) external override onlyRole(DEFAULT_ADMIN_ROLE) {
+        require(pendingOverrides[assetToken].exists, "AssetRegistry: no pending override");
+        delete pendingOverrides[assetToken];
+        emit OverrideCancelled(assetToken);
+    }
 }
 
 interface IVaultView {

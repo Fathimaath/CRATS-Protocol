@@ -30,5 +30,11 @@ interface IAssetPlugin {
         AssetDocument[] calldata docs
     ) external view returns (bool);
     
+    struct RedemptionPolicy {
+        bool defaultEnabled;
+        bool issuerCanOverride;
+    }
+
     function getRequiredDocuments() external pure returns (string[] memory);
+    function redemptionPolicy() external view returns (bool defaultEnabled, bool issuerCanOverride);
 }

@@ -1,10 +1,10 @@
 # TECHNICAL SPECIFICATION
 ## CRATS Protocol Technical Specification & Development Lifecycle
-### Requirements, Design & Development Phases (Current State - v7.0.0)
+### Requirements, Design & Development Phases (Current State - v8.0.0)
 **Real-World Asset Tokenization Platform**  
 **Ethereum Sepolia (Development Network)**
 
-> **v7.0.0 — 2026-06-30** — FineArt Plugin deployed · DisputeResolver · NAVScheduler (Chainlink) · Fee Dashboard
+> **v8.0.0 — 2026-07-07** — Redemption Module deployed · Standalone RedemptionManager · LifecycleExitManager Proxy · Compliance duration caps · Vault Template Upgrades
 
 *CopyM Platform — Confidential*
 
@@ -47,15 +47,21 @@
    - 8.3 NAVScheduler — Chainlink Automation Keeper
    - 8.4 Fee Dashboard View Layer
    - 8.5 Interactive NAV & Dispute Workflow CLI
-9. [Institutional Reality Checks & Gap Analysis](#9-institutional-reality-checks--gap-analysis)
-10. [Appendix: Core Smart Contract Code Snippets](#10-appendix-core-smart-contract-code-snippets)
-    - 10.1 Layer 1: Identity & Compliance (Gatekeeping)
-    - 10.2 Layer 2: Asset Management & RWA Plugins
-    - 10.3 Layer 3: Financial Layer & Vault Share Minting (Sync/Async Vaults)
-    - 10.4 Layer 3 Financials: FeeEngine & NAVOracle
-    - 10.5 Layer 4: Marketplace & Secondary Settlement
-11. [Deployed Contract Registry (Sepolia)](#11-deployed-contract-registry-sepolia)
-12. [Changelog](#12-changelog)
+9. [Section D: v8.0.0 Redemption & Exit Extensions](#9-section-d-v800-redemption--exit-extensions)
+   - 9.1 RedemptionManager (Immediate vs Queue-Based Redemption Lifecycle)
+   - 9.2 LifecycleExitManager (Institutional RWA Liquidation Exit Workflow)
+   - 9.3 Upgraded Compliance & Circuit Breaker Logic
+   - 9.4 Automated BOR (Beneficial Owner Registry) Syncing
+10. [Institutional Reality Checks & Gap Analysis](#10-institutional-reality-checks--gap-analysis)
+11. [Appendix: Core Smart Contract Code Snippets](#11-appendix-core-smart-contract-code-snippets)
+    - 11.1 Layer 1: Identity & Compliance (Gatekeeping)
+    - 11.2 Layer 2: Asset Management & RWA Plugins
+    - 11.3 Layer 3: Financial Layer & Vault Share Minting (Sync/Async Vaults)
+    - 11.4 Layer 3 Financials: FeeEngine & NAVOracle
+    - 11.5 Layer 4: Marketplace & Secondary Settlement
+    - 11.6 Layer 3: Redemption & Lifecycle Exit Managers
+12. [Deployed Contract Registry (Sepolia)](#12-deployed-contract-registry-sepolia)
+13. [Changelog](#13-changelog)
 
 ---
 
@@ -566,7 +572,38 @@ npm run cli:nav <sepolia | localhost>
 
 ---
 
-## 9. Institutional Reality Checks & Gap Analysis
+## 9. Section D: v8.0.0 Redemption & Exit Extensions
+
+To support institutional exit scenarios (such as real estate asset liquidations) and standard token redemptions, the protocol adds two dedicated managers at Layer 3: the `RedemptionManager` and the `LifecycleExitManager`.
+
+### 9.1 RedemptionManager (Immediate vs Queue-Based Redemption Lifecycle)
+
+The `RedemptionManager` handles the standard investor redemption lifecycle for RWA assets:
+*   **Immediate Redemptions**: SyncVaults process immediate redemptions by pulling shares and returning assets atomically (subject to KYC checks).
+*   **Queue-Based Redemptions**: AsyncVaults (under EIP-7540) log redemption requests to the manager in a `PENDING` state. Upon verification and cash settlement by an operator, the request advances to `READY` and can be claimed by the investor.
+*   **Compliance Blockers**: In accordance with the v5.1 findings, if an investor is Restricted by compliance during a pending redemption, their request is held in the `PENDING` state and cannot advance to `READY` until the restriction expires or is removed.
+
+### 9.2 LifecycleExitManager (Institutional RWA Liquidation Exit Workflow)
+
+Real estate assets undergo a complete asset exit instead of individual investor redemptions. The `LifecycleExitManager` contract coordinates this:
+*   **Settlement Verification**: The asset manager must provide settlement evidence and obtain governance approval before payouts or burns begin.
+*   **Pro-rata Payout**: Calculates each investor's entitlement based on their vault share balance and pulls USDC to distribute to investors.
+*   **Escrow Routing**: If an investor is restricted by the compliance layer during execution, their USDC portion is routed to an escrow sub-balance and locked until the restriction resolves.
+*   **Programmatic Burning**: Programmatically burns the vault shares from investors and the underlying RWA token from the vault to conclude liquidation.
+*   **Vault Closure**: Shuts down the vault and registers it as CLOSED.
+
+### 9.3 Upgraded Compliance & Circuit Breaker Logic
+
+*   **Duration Caps**: Investor-level compliance restrictions are limited to a maximum of 180 days to prevent indefinite locking without active regulatory review.
+*   **Pausable Checkpoint**: The Guardian may pause the lifecycle exit process at any point before programmatic burning and vault closure begin. Once the final burn begins, the transaction executes atomically.
+
+### 9.4 Automated BOR (Beneficial Owner Registry) Syncing
+
+*   Vaults automatically synchronize share updates (mints, burns, transfers) to the `AssetRegistry` via the Beneficial Owner Registry (BOR) update hook. The vault must be registered in `AssetRegistry` from the admin account to obtain `VAULT_ROLE` permissions to sync.
+
+---
+
+## 10. Institutional Reality Checks & Gap Analysis
 
 1.  **Regulatory Role Accountability:** The regulator roles in `AssetToken.sol` (e.g. `forceTransfer` capability) must be mapped to multi-sig addresses managed by designated legal compliance entities, rather than a single admin private key.
 2.  **Sanctions Oracle Integration:** While `IdentityRegistry` enforces static KYC check dates, a live compliance integration requires a continuous sanctions scanner oracle (e.g. Chainlink/Sumsub integration) to dynamically trigger address freezing on-chain.
@@ -576,11 +613,11 @@ npm run cli:nav <sepolia | localhost>
 
 ---
 
-## 9. Appendix: Core Smart Contract Code Snippets
+## 11. Appendix: Core Smart Contract Code Snippets
 
 This appendix contains high-fidelity code snippets focusing on the core business logic, regulatory rules, and state transitions of the CRATS Protocol. Standard imports, boilerplate getters, and events have been omitted for clarity.
 
-### 9.1 Layer 1: Identity & Compliance (Gatekeeping)
+### 11.1 Layer 1: Identity & Compliance (Gatekeeping)
 
 #### `IdentityRegistry.sol` (KYC & Role Registration)
 ```solidity
@@ -908,11 +945,122 @@ function initiateSettlement(
 }
 ```
 
+### 11.6 Layer 3: Redemption & Lifecycle Exit Managers
+
+#### `RedemptionManager.sol` (Request & Process Redemption Queue)
+```solidity
+// Submits a queue-based or gated redemption request, escrowing shares and calculating fees
+function requestRedemption(
+    address vault,
+    uint256 shares
+) external nonReentrant returns (uint256 requestId) {
+    require(vault != address(0), "RedemptionManager: Invalid vault");
+    require(shares > 0, "RedemptionManager: Shares must be positive");
+
+    address assetToken = address(0);
+    try IVault(vault).asset() returns (address _asset) {
+        assetToken = _asset;
+    } catch {
+        assetToken = vault;
+    }
+
+    if (assetRegistry != address(0)) {
+        bool policyEnabled = IAssetRegistry(assetRegistry).getAssetRedemptionConfig(assetToken);
+        require(policyEnabled, "RedemptionManager: Redemption not enabled");
+    }
+
+    _checkInvestorVerification(msg.sender);
+    _checkRedemptionGate(vault, shares);
+
+    try IERC20(vault).transferFrom(msg.sender, address(this), shares) {} catch {}
+
+    uint256 feePaid = 0;
+    address feeEngine = address(0);
+    try IVault(vault).feeEngine() returns (address _feeEngine) {
+        feeEngine = _feeEngine;
+    } catch {}
+    if (feeEngine != address(0)) {
+        uint256 fee = IFeeEngine(feeEngine).calculateExitFee(vault, shares, msg.sender);
+        if (fee > 0) {
+            address usdcToken = address(IFeeEngine(feeEngine).usdc());
+            uint256 feeUSDC = _scaleDecimals(vault, usdcToken, fee);
+            if (feeUSDC > 0) {
+                IERC20(usdcToken).safeTransferFrom(msg.sender, address(this), feeUSDC);
+                feePaid = feeUSDC;
+            }
+        }
+    }
+
+    requestId = nextRequestId[vault]++;
+    redemptionRequests[vault][requestId] = RedemptionRequest({
+        investor: msg.sender,
+        shares: shares,
+        assets: 0,
+        requestTime: block.timestamp,
+        settleTime: 0,
+        status: RedemptionStatus.PENDING,
+        processor: address(0),
+        freezeTime: 0,
+        feePaid: feePaid
+    });
+
+    vaultRequestIds[vault].push(requestId);
+    emit RedemptionRequested(vault, requestId, msg.sender, shares, block.timestamp);
+}
+```
+
+#### `LifecycleExitManager.sol` (Atomic Asset Liquidation Exit & Escrow Routing)
+```solidity
+// Executes the pro-rata liquidation payout, handles compliance escrow routing, and burns shares/assets
+function executeExit(address vault) external nonReentrant whenNotPaused {
+    ExitRecord storage record = exits[vault];
+    require(record.verified, "ExitManager: exit not verified");
+    require(record.status == ExitStatus.PENDING, "ExitManager: already executed");
+    require(IAssetRegistry(assetRegistry).isExitApproved(vault), "ExitManager: exit not approved by governance");
+
+    record.status = ExitStatus.EXECUTING;
+    address assetToken = IVault(vault).asset();
+    uint256 totalShares = IERC20(vault).totalSupply();
+    uint256 settlementAmount = record.settlementAmount;
+
+    address[] memory investors = IAssetRegistry(assetRegistry).getVaultHolders(vault);
+    uint256 len = investors.length;
+    require(len > 0, "ExitManager: no investors");
+
+    for (uint256 i = 0; i < len; i++) {
+        address investor = investors[i];
+        uint256 shares = IERC20(vault).balanceOf(investor);
+        if (shares == 0) continue;
+
+        uint256 entitlement = (settlementAmount * shares) / totalShares;
+        if (entitlement == 0) continue;
+
+        // Query investor compliance status via Compliance layer
+        bool isRestricted = ICompliance(complianceModule).isInvestorRestricted(assetToken, investor);
+        if (isRestricted) {
+            // Route to escrow sub-balance
+            escrowBalances[vault][investor] += entitlement;
+            emit FundsEscrowed(vault, investor, entitlement, block.timestamp);
+        } else {
+            usdc.safeTransfer(investor, entitlement);
+        }
+
+        // Programmatically burn vault shares and underlying asset tokens from the vault
+        IVault(vault).burnShares(investor, shares);
+        IAssetToken(assetToken).burnFromExcludingAllowance(vault, shares);
+    }
+
+    IVault(vault).closeVault();
+    record.status = ExitStatus.COMPLETED;
+    emit LifecycleExitExecuted(vault, settlementAmount, block.timestamp);
+}
+```
+
 ---
 
-## 11. Deployed Contract Registry (Sepolia)
+## 12. Deployed Contract Registry (Sepolia)
 
-> Last updated: **v7.0.0 — 2026-06-30**
+> Last updated: **v8.0.0 — 2026-07-07**
 
 ### Layer 1 — Identity
 | Contract | Address |
@@ -928,7 +1076,7 @@ function initiateSettlement(
 | Contract | Address |
 |---|---|
 | CircuitBreakerModule | `0x010de9e1Cb69Dbf10ea25b2267538Ecb055d28A6` |
-| AssetToken (template) | `0x2AED4bd6C552CEd0300cE29CAfB41453430A8191` |
+| AssetToken (template) | `0xD1aB6DAC41cC010aE4a6f858824a55BFDF59A70a` |
 | AssetFactory | `0xeCd44390e9fC54d6f25726b7076FA5F601695F05` |
 | AssetRegistry | `0xb103311FFe01849201E892d07E984ad2A17ED62f` |
 | RealEstatePlugin | `0xC5c3c0916f02119ed16E70a5970FABA692D77496` |
@@ -937,13 +1085,16 @@ function initiateSettlement(
 ### Layer 3 — Financial
 | Contract | Address |
 |---|---|
-| SyncVault (template) | `0xA89153E7bcDDb44FB12788e1601A578B0146D831` |
+| SyncVault (template) | `0x0EE0148e90F05478E524967C3322AdB5761D4C5E` |
+| AsyncVault (template) | `0x14CCb54eCD80a1C13E3B4757F82f7e5D2b0E3E1F` |
 | VaultFactory | `0x5759Aa4c0814D9D7e09043711462eE9C4362C921` |
 | YieldDistributor | `0xeE155a2DEeA1b4Fa4eEC51eA1b76343fd1BEA449` |
 | FeeEngine | `0xB9E9B4Ff39def237BEcDE33ff80289340cA75Eaa` |
 | NAVOracle | `0xd23Ad18c8Db21A79E48e18D8f1aF085999d57867` |
 | **DisputeResolver** *(v7.0)* | `0xB69308E970967b2D5073f2Ed3904A816De5cb2e6` |
 | **NAVScheduler** *(v7.0)* | `0xD3e9f677a20e1CF377a0f52E18bD8aecCd0A60aD` |
+| **RedemptionManager** *(v8.0)* | `0x6D728934aCA64f45B98fE4e07aF6Bbe1C8956F52` |
+| **LifecycleExitManager** *(v8.0)* | `0xC8af899eac24F755704a1ad287fCe62b77929a6c` |
 | Mock USDC | `0xf3f6f980917e9304D8dC9828A463BDf4b59239D4` |
 | Mock USDT | `0x855BeB487504596AAf75dE0Edc4EB70270FcB68A` |
 
@@ -958,7 +1109,7 @@ function initiateSettlement(
 
 ---
 
-## 12. Changelog
+## 13. Changelog
 
 | Version | Date | Summary |
 |---|---|---|
@@ -968,4 +1119,5 @@ function initiateSettlement(
 | v4.0.0 | — | Async vault (EIP-7540) |
 | v5.0.0 | — | Layer 4 marketplace (OrderBook, Settlement, ClearingHouse) |
 | v6.0.0 | 2026-06-25 | NAVOracle UUPS upgrade, FeeEngine v6, BOR integration, marketplace config |
-| **v7.0.0** | **2026-06-30** | FineArtPlugin deployed & registered; DisputeResolver standalone proxy; NAVScheduler + Chainlink Automation interface; 4 asset class schedules on-chain; FeeEngine `getFeeDashboard()` view |
+| v7.0.0 | 2026-06-30 | FineArtPlugin deployed & registered; DisputeResolver standalone proxy; NAVScheduler + Chainlink Automation interface; 4 asset class schedules on-chain; FeeEngine `getFeeDashboard()` view |
+| **v8.0.0** | **2026-07-07** | **Redemption Module implementation (v5.0 & v5.1 findings); Deployed standalone `RedemptionManager` and `LifecycleExitManager` proxies; Upgraded `AssetRegistry` and `Compliance` on Sepolia; Updated factory templates.** |
