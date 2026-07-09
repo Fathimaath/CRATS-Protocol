@@ -106,15 +106,12 @@ interface IAssetRegistry {
     // === Beneficial Ownership Registry (BOR) ===
 
     function registerVault(address assetToken, address vault) external;
-    function syncOwner(address assetToken, address investor, uint256 newShares) external;
-    function syncOwnerBatch(address assetToken, address[] calldata investors, uint256[] calldata newShares) external;
+    function updateBeneficialOwnership(address assetToken, address vault, address investor, uint256 newShares) external;
+    function updateBeneficialOwnershipBatch(address assetToken, address vault, address[] calldata investors, uint256[] calldata newShares) external;
     
     function getBeneficialOwner(address assetToken, address vault, address investor) external view returns (BeneficialOwner memory);
-    function getVaultOwners(address assetToken, address vault) external view returns (BeneficialOwner[] memory);
-    function getAllOwners(address assetToken) external view returns (BeneficialOwner[] memory);
+    function isVaultRegistered(address assetToken, address vault) external view returns (bool);
     function getTotalClaim(address assetToken, address investor) external view returns (uint256 totalAptClaim, uint256 totalBps);
-    function getVaultSummary(address assetToken, address vault) external view returns (VaultSummary memory);
-    function validateInvariant(address assetToken, address vault) external view returns (bool isValid, uint256 delta);
 
     // === Redemption Configuration ===
     event OverrideProposed(address indexed assetToken, bool newValue, uint256 executeAt);

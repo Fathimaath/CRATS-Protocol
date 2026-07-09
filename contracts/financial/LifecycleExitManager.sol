@@ -116,9 +116,13 @@ contract LifecycleExitManager is
         emit ExitResumed(vault, block.timestamp);
     }
 
-    function executeExit(address vault) external onlyRole(DEFAULT_ADMIN_ROLE) nonReentrant {
+    function executeExit(
+        address vault,
+        address[] calldata investors
+    ) external onlyRole(DEFAULT_ADMIN_ROLE) nonReentrant {
         ExitInfo storage exit = vaultExits[vault];
         require(exit.status == ExitStatus.VERIFIED, "LifecycleExitManager: exit not verified or is paused");
+        require(investors.length > 0, "LifecycleExitManager: no investors provided");
 
         uint256 settlementAmount = exit.settlementAmount;
         exit.status = ExitStatus.EXECUTED;
@@ -127,15 +131,12 @@ contract LifecycleExitManager is
         uint256 totalShares = IVault(vault).totalSupply();
         require(totalShares > 0, "LifecycleExitManager: no shares to exit");
 
-        // Query beneficial owners from AssetRegistry
-        IAssetRegistry.BeneficialOwner[] memory owners = assetRegistry.getVaultOwners(assetToken, vault);
-        require(owners.length > 0, "LifecycleExitManager: no beneficial owners found");
-
         address comp = IVault(vault).complianceModule();
 
-        for (uint256 i = 0; i < owners.length; i++) {
-            address investor = owners[i].investor;
-            uint256 shares = owners[i].vaultShares;
+        for (uint256 i = 0; i < investors.length; i++) {
+            address investor = investors[i];
+            IAssetRegistry.BeneficialOwner memory record = assetRegistry.getBeneficialOwner(assetToken, vault, investor);
+            uint256 shares = record.vaultShares;
             if (shares == 0) continue;
 
             uint256 entitlement = (shares * settlementAmount) / totalShares;

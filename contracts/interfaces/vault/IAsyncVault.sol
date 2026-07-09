@@ -93,7 +93,8 @@ interface IAsyncVault {
         string calldata name_,
         string calldata symbol_,
         address admin,
-        address assetRegistry_
+        address assetRegistry_,
+        address syncManager_
     ) external;
 
     // ========== View Functions ==========

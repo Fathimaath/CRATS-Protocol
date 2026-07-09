@@ -51,6 +51,7 @@ contract VaultFactory is AccessControl, ReentrancyGuard {
     address public yieldDistributor;
     address public redemptionManager;
     address public assetFactory;
+    address public syncManager;
 
     /// @dev Category plugins
     mapping(bytes32 => address) public categoryPlugins;
@@ -190,11 +191,15 @@ contract VaultFactory is AccessControl, ReentrancyGuard {
                 params.name, 
                 params.symbol, 
                 msg.sender,
-                registry
+                registry,
+                syncManager
             );
             ISyncVault(vault).setCategory(params.category);
             if (identityRegistry != address(0)) {
                 ISyncVault(vault).setIdentityRegistry(identityRegistry);
+            }
+            if (complianceModule != address(0)) {
+                ISyncVault(vault).setComplianceModule(complianceModule);
             }
         } else {
             IAsyncVault(vault).initialize(
@@ -202,10 +207,14 @@ contract VaultFactory is AccessControl, ReentrancyGuard {
                 params.name,
                 params.symbol,
                 msg.sender,
-                registry
+                registry,
+                syncManager
             );
             IAsyncVault(vault).setCategory(params.category);
             IAsyncVault(vault).setSettlementPeriod(params.redeemSettlement);
+            if (complianceModule != address(0)) {
+                IAsyncVault(vault).setComplianceModule(complianceModule);
+            }
         }
 
         // Register vault in AssetRegistry via AssetFactory
@@ -347,6 +356,15 @@ contract VaultFactory is AccessControl, ReentrancyGuard {
         require(factory != address(0), "VaultFactory: Invalid asset factory");
         assetFactory = factory;
         emit Layer1Configured("AssetFactory", factory);
+    }
+
+    /**
+     * @dev Set Ownership Sync Manager
+     */
+    function setSyncManager(address sm) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        require(sm != address(0), "VaultFactory: Invalid sync manager");
+        syncManager = sm;
+        emit Layer1Configured("SyncManager", sm);
     }
 
     // ========== View Functions ==========

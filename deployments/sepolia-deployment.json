@@ -2,7 +2,7 @@
   "network": "sepolia",
   "chainId": "11155111",
   "deployer": "0x5537dbc19eeE936A615B151c8C5983FBF735C583",
-  "timestamp": "2026-06-30T13:31:49.826Z",
+  "timestamp": "2026-07-09T14:23:14.766Z",
   "contracts": {
     "kycRegistry": "0xb4C0CD81eA49Dc4AC94472004955C7EE9f99Dc5c",
     "identitySBT": "0x5e88d8a83dE2F46F6809BaA06299f5113f3607A7",
@@ -15,8 +15,8 @@
     "assetFactory": "0xeCd44390e9fC54d6f25726b7076FA5F601695F05",
     "assetRegistry": "0xb103311FFe01849201E892d07E984ad2A17ED62f",
     "realEstatePlugin": "0xC5c3c0916f02119ed16E70a5970FABA692D77496",
-    "syncVaultTemplate": "0x0EE0148e90F05478E524967C3322AdB5761D4C5E",
-    "vaultFactory": "0x5759Aa4c0814D9D7e09043711462eE9C4362C921",
+    "syncVaultTemplate": "0x828129f4237CB12AE3cFA55261579483cd54e0d3",
+    "vaultFactory": "0x9334dB9f4AE063b2C4FdEb40F2a63a7149d52C3c",
     "yieldDistributor": "0xeE155a2DEeA1b4Fa4eEC51eA1b76343fd1BEA449",
     "usdc": "0xf3f6f980917e9304D8dC9828A463BDf4b59239D4",
     "usdt": "0x855BeB487504596AAf75dE0Edc4EB70270FcB68A",
@@ -38,8 +38,11 @@
     "resolverRoleGranted": true,
     "schedulerAdminGranted": true,
     "navSchedulesInitialized": true,
-    "asyncVaultTemplate": "0x14CCb54eCD80a1C13E3B4757F82f7e5D2b0E3E1F",
+    "asyncVaultTemplate": "0x73a464eA33549ac78B10A2Fa3Ab2E6f1B36FaDe2",
     "redemptionManager": "0x6D728934aCA64f45B98fE4e07aF6Bbe1C8956F52",
-    "lifecycleExitManager": "0xC8af899eac24F755704a1ad287fCe62b77929a6c"
+    "lifecycleExitManager": "0xC8af899eac24F755704a1ad287fCe62b77929a6c",
+    "syncManager": "0xAEA3f4E28c9F0122EB8eD2773b79c9743421D007",
+    "carbonCreditPlugin": "0xDc0E01a25b094ba83e43084824472F8dc0c7C737",
+    "carbonCreditPluginRegistered": true
   }
 }

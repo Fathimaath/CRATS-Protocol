@@ -4,6 +4,7 @@ pragma solidity ^0.8.25;
 import "@openzeppelin/contracts-upgradeable/token/ERC20/ERC20Upgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import "../interfaces/asset/IAssetRegistry.sol";
+import "../interfaces/asset/IOwnershipSync.sol";
 
 /**
  * @title BaseVault
@@ -14,8 +15,11 @@ abstract contract BaseVault is Initializable, ERC20Upgradeable {
     // L2 AssetToken this vault holds
     address public assetToken;
 
-    // L2 AssetRegistry — receives sync calls
+    // L2 AssetRegistry — receives configuration queries
     IAssetRegistry public assetRegistry;
+
+    // L3 OwnershipSyncManager — receives sync calls
+    IOwnershipSync public syncManager;
 
     // --- Events ---
     event YieldSyncRequired(
@@ -28,10 +32,12 @@ abstract contract BaseVault is Initializable, ERC20Upgradeable {
     // --- Initializer ---
     function __BaseVault_init(
         address _assetToken,
-        address _assetRegistry
+        address _assetRegistry,
+        address _syncManager
     ) internal onlyInitializing {
         assetToken = _assetToken;
         assetRegistry = IAssetRegistry(_assetRegistry);
+        syncManager = IOwnershipSync(_syncManager);
     }
 
     /**
@@ -45,11 +51,12 @@ abstract contract BaseVault is Initializable, ERC20Upgradeable {
     ) internal virtual override {
         super._update(from, to, value);
 
-        if (address(assetRegistry) != address(0)) {
+        if (address(syncManager) != address(0)) {
             // Sync the sender (if not mint)
             if (from != address(0) && from != address(1)) {
-                try assetRegistry.syncOwner(
+                try syncManager.updateBeneficialOwnership(
                     assetToken,
+                    address(this),
                     from,
                     balanceOf(from)
                 ) {} catch {}
@@ -57,8 +64,9 @@ abstract contract BaseVault is Initializable, ERC20Upgradeable {
 
             // Sync the receiver (if not burn)
             if (to != address(0) && to != address(1)) {
-                try assetRegistry.syncOwner(
+                try syncManager.updateBeneficialOwnership(
                     assetToken,
+                    address(this),
                     to,
                     balanceOf(to)
                 ) {} catch {}
@@ -71,12 +79,12 @@ abstract contract BaseVault is Initializable, ERC20Upgradeable {
      * For vaults with > 200 holders, emits an event for off-chain sync.
      */
     function _afterYieldDistribution() internal virtual {
-        if (address(assetRegistry) != address(0)) {
+        if (address(syncManager) != address(0)) {
             uint256 holderCount = _getHolderCount();
 
             if (holderCount <= 200) {
                 (address[] memory holders, uint256[] memory shares) = _getAllHolders();
-                assetRegistry.syncOwnerBatch(assetToken, holders, shares);
+                try syncManager.updateBeneficialOwnershipBatch(assetToken, address(this), holders, shares) {} catch {}
             } else {
                 emit YieldSyncRequired(
                     assetToken,

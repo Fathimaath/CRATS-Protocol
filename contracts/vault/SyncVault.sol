@@ -63,13 +63,14 @@ contract SyncVault is
         string memory name_,
         string memory symbol_,
         address admin,
-        address assetRegistry_
+        address assetRegistry_,
+        address syncManager_
     ) public initializer {
         __ERC4626_init(IERC20(asset_));
         __ERC20_init(name_, symbol_);
         __AccessControl_init();
         __ReentrancyGuard_init();
-        __BaseVault_init(asset_, assetRegistry_);
+        __BaseVault_init(asset_, assetRegistry_, syncManager_);
 
         _grantRole(DEFAULT_ADMIN_ROLE, admin);
         _grantRole(DEFAULT_ADMIN_ROLE, _msgSender()); // Grant to Factory for configuration

@@ -9,7 +9,7 @@ const hre = require("hardhat");
 async function main() {
     console.log("\n--- Step 16: Lifecycle Exit (L3) ---");
     const deployment = await getDeploymentInfo();
-    const [deployer, issuer, investor] = await hre.ethers.getSigners();
+    const [deployer, issuer, investor, buyer] = await hre.ethers.getSigners();
 
     // 1. Deploy LifecycleExitManager if not already deployed
     let lifecycleExitManagerAddr = deployment.contracts.lifecycleExitManager;
@@ -47,12 +47,12 @@ async function main() {
     const vaultHasRole = await azureVault.hasRole(DEFAULT_ADMIN_ROLE, lifecycleExitManagerAddr);
     if (!vaultHasRole) {
         console.log("Granting DEFAULT_ADMIN_ROLE to LifecycleExitManager on azureVault...");
-        await (await azureVault.grantRole(DEFAULT_ADMIN_ROLE, lifecycleExitManagerAddr)).wait();
+        await (await azureVault.connect(issuer).grantRole(DEFAULT_ADMIN_ROLE, lifecycleExitManagerAddr)).wait();
     }
     const tokenHasRole = await azureToken.hasRole(DEFAULT_ADMIN_ROLE, lifecycleExitManagerAddr);
     if (!tokenHasRole) {
         console.log("Granting DEFAULT_ADMIN_ROLE to LifecycleExitManager on azureToken...");
-        await (await azureToken.grantRole(DEFAULT_ADMIN_ROLE, lifecycleExitManagerAddr)).wait();
+        await (await azureToken.connect(issuer).grantRole(DEFAULT_ADMIN_ROLE, lifecycleExitManagerAddr)).wait();
     }
 
     // 2. Settlement Verification
@@ -71,7 +71,7 @@ async function main() {
 
     console.log("Attempting execution of paused exit (should fail)...");
     try {
-        await (await exitManager.executeExit(await azureVault.getAddress())).wait();
+        await (await exitManager.executeExit(await azureVault.getAddress(), [investor.address, buyer.address])).wait();
         throw new Error("Execution succeeded on paused exit!");
     } catch (e) {
         console.log(`Execution correctly blocked: ${e.message}`);
@@ -88,7 +88,7 @@ async function main() {
 
     // 5. Execute Exit
     console.log("Executing exit...");
-    const execTx = await exitManager.executeExit(await azureVault.getAddress());
+    const execTx = await exitManager.executeExit(await azureVault.getAddress(), [investor.address, buyer.address]);
     await execTx.wait();
     console.log("Exit executed.");
 

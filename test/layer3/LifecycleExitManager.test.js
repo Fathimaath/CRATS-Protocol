@@ -41,6 +41,15 @@ describe("Layer 3 - LifecycleExitManager", function () {
         // 4. Deploy AssetRegistry using deployUpgradeable
         assetRegistry = await deployUpgradeable("AssetRegistry", [admin.address]);
 
+        // Deploy OwnershipSyncManager
+        const OwnershipSyncManager = await ethers.getContractFactory("OwnershipSyncManager");
+        const syncManager = await OwnershipSyncManager.deploy(admin.address, await assetRegistry.getAddress());
+        await syncManager.waitForDeployment();
+        
+        // Grant SYNC_MANAGER_ROLE to syncManager in AssetRegistry
+        const SYNC_MANAGER_ROLE = await assetRegistry.SYNC_MANAGER_ROLE();
+        await assetRegistry.connect(admin).grantRole(SYNC_MANAGER_ROLE, await syncManager.getAddress());
+
         // 5. Deploy AssetToken (18 decimals)
         const AssetToken = await ethers.getContractFactory("AssetToken");
         const tokenImpl = await AssetToken.deploy();
@@ -71,7 +80,8 @@ describe("Layer 3 - LifecycleExitManager", function () {
             "Sync Vault",
             "sVT",
             admin.address,
-            await assetRegistry.getAddress()
+            await assetRegistry.getAddress(),
+            await syncManager.getAddress()
         ]);
         const vaultProxy = await ERC1967Proxy.deploy(await vaultImpl.getAddress(), vaultInit);
         await vaultProxy.waitForDeployment();
@@ -161,7 +171,7 @@ describe("Layer 3 - LifecycleExitManager", function () {
 
         it("Should prevent execution when paused", async function () {
             await exitManager.connect(guardian).pauseExit(await vault.getAddress());
-            await expect(exitManager.executeExit(await vault.getAddress()))
+            await expect(exitManager.executeExit(await vault.getAddress(), [investor1.address, investor2.address]))
                 .to.be.revertedWith("LifecycleExitManager: exit not verified or is paused");
         });
 
@@ -190,7 +200,7 @@ describe("Layer 3 - LifecycleExitManager", function () {
             const balance1Before = await usdc.balanceOf(investor1.address);
             const balance2Before = await usdc.balanceOf(investor2.address);
 
-            await expect(exitManager.executeExit(await vault.getAddress()))
+            await expect(exitManager.executeExit(await vault.getAddress(), [investor1.address, investor2.address]))
                 .to.emit(exitManager, "LifecycleExitExecuted")
                 .withArgs(await vault.getAddress(), SETTLEMENT_AMOUNT, anyValue => true);
 
@@ -227,7 +237,7 @@ describe("Layer 3 - LifecycleExitManager", function () {
             const balance1Before = await usdc.balanceOf(investor1.address);
             const balance2Before = await usdc.balanceOf(investor2.address);
 
-            await exitManager.executeExit(await vault.getAddress());
+            await exitManager.executeExit(await vault.getAddress(), [investor1.address, investor2.address]);
 
             const balance1After = await usdc.balanceOf(investor1.address);
             const balance2After = await usdc.balanceOf(investor2.address);

@@ -54,6 +54,7 @@ describe("Layer 3 - AsyncVault (ERC-7540)", function () {
       "Async Vault Token",
       "aVT",
       admin.address,
+      ethers.ZeroAddress,
       ethers.ZeroAddress
     );
 

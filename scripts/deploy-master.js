@@ -234,6 +234,27 @@ async function main() {
       console.log("  ℹ️ AssetRegistry already deployed at:", deployed.assetRegistry);
     }
 
+    let syncManager;
+    if (!deployed.syncManager) {
+      console.log("  Deploying OwnershipSyncManager...");
+      const OwnershipSyncManager = await hre.ethers.getContractFactory("OwnershipSyncManager");
+      const syncManagerInstance = await OwnershipSyncManager.deploy(deployer.address, deployed.assetRegistry, { gasPrice });
+      await syncManagerInstance.waitForDeployment();
+      deployed.syncManager = await syncManagerInstance.getAddress();
+      console.log("  ✅ OwnershipSyncManager:", deployed.syncManager);
+      saveProgress();
+
+      // Grant SYNC_MANAGER_ROLE to OwnershipSyncManager on AssetRegistry
+      console.log("  Granting SYNC_MANAGER_ROLE to syncManager in AssetRegistry...");
+      if (!assetRegistry) {
+        assetRegistry = await hre.ethers.getContractAt("AssetRegistry", deployed.assetRegistry);
+      }
+      const SYNC_MANAGER_ROLE = await assetRegistry.SYNC_MANAGER_ROLE();
+      await (await assetRegistry.connect(deployer).grantRole(SYNC_MANAGER_ROLE, deployed.syncManager, { gasPrice })).wait();
+    } else {
+      console.log("  ℹ️ OwnershipSyncManager already deployed at:", deployed.syncManager);
+    }
+
     let realEstatePlugin;
     if (!deployed.realEstatePlugin) {
       const REAL_ESTATE = hre.ethers.id("REAL_ESTATE");
@@ -357,6 +378,9 @@ async function main() {
       await (await vaultFactory.setComplianceModule(deployed.complianceModule, { gasPrice })).wait();
       await (await vaultFactory.setCircuitBreakerModule(deployed.circuitBreaker, { gasPrice })).wait();
       await (await vaultFactory.setYieldDistributor(deployed.yieldDistributor, { gasPrice })).wait();
+      if (deployed.syncManager) {
+        await (await vaultFactory.setSyncManager(deployed.syncManager, { gasPrice })).wait();
+      }
       
       const assetRegistryInstance = await hre.ethers.getContractAt("AssetRegistry", deployed.assetRegistry);
       await (await assetRegistryInstance.addOperator(deployed.vaultFactory, { gasPrice })).wait();
@@ -376,6 +400,9 @@ async function main() {
       await (await vaultFactory.setComplianceModule(deployed.complianceModule, { gasPrice })).wait();
       await (await vaultFactory.setCircuitBreakerModule(deployed.circuitBreaker, { gasPrice })).wait();
       await (await vaultFactory.setYieldDistributor(deployed.yieldDistributor, { gasPrice })).wait();
+      if (deployed.syncManager) {
+        await (await vaultFactory.setSyncManager(deployed.syncManager, { gasPrice })).wait();
+      }
       
       const assetRegistryInstance = await hre.ethers.getContractAt("AssetRegistry", deployed.assetRegistry);
       await (await assetRegistryInstance.addOperator(deployed.vaultFactory, { gasPrice })).wait();

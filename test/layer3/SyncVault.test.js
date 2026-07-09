@@ -53,6 +53,7 @@ describe("Layer 3 - SyncVault (ERC-4626)", function () {
       "Sync Vault Token",
       "sVT",
       admin.address,
+      ethers.ZeroAddress,
       ethers.ZeroAddress
     );
 
@@ -333,6 +334,7 @@ describe("Layer 3 - SyncVault (ERC-4626)", function () {
         "Test Sync Vault",
         "tSV",
         admin.address,
+        ethers.ZeroAddress,
         ethers.ZeroAddress
       );
       await localVault.grantRole(OPERATOR_ROLE, operator.address);

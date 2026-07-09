@@ -1,0 +1,282 @@
+# CRATS P2P Ownership Sync & Beneficial Ownership Register (BOR) Architecture
+
+## 1. Executive Summary
+
+The CRATS Protocol v9.0.0 introduces a modernized, gas-efficient, and secure architecture for tracing and managing beneficial ownership of tokenized Real-World Assets (RWA) in secondary marketplaces (P2P). 
+
+By separating the token execution logic (Layer 3 Vaults) from the registry synchronization logic (Layer 2 AssetRegistry) and introducing the **OwnershipSyncManager** middleware, the protocol achieves:
+- **Unified Middleware Routing:** A single gateway to route all ownership updates, preventing direct, unauthorized registry modifications.
+- **Transaction History Optimization:** Removal of redundant on-chain history arrays to eliminate storage bloat and optimize gas usage during transfers, while preserving storage slot layouts for safe UUPS upgrades.
+- **Enhanced Security Boundaries:** Decentralized authorization via role-based access control, explicit reentrancy guards, and modular registry lookups.
+- **Deterministic Lifecycle Exits:** Exit settlement flows using explicit holder arrays to bypass complex on-chain iterations.
+
+---
+
+## 2. Core Architecture & Workflow
+
+### 2.1 Technical Workflow Diagram
+
+The sequence below illustrates how a P2P secondary trade settlement via the `ClearingHouse` triggers the beneficial ownership update:
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor Buyer
+    actor Seller
+    participant CH as ClearingHouse
+    participant SV as SyncVault (L3)
+    participant OSM as OwnershipSyncManager (L2)
+    participant AR as AssetRegistry (L2)
+    participant Indexer as Subgraph / Indexer
+    participant DB as Backend Database
+
+    CH->>SV: Transfer shares (Seller -> Buyer)
+    Note over SV: Executes _update() Hook
+    SV->>OSM: updateBeneficialOwnership(asset, vault, Seller, newBalance)
+    OSM->>AR: updateBeneficialOwnership(asset, vault, Seller, newBalance)
+    Note over AR: Update beneficial ownership registry state
+    AR-->>OSM: Done
+    OSM-->>SV: Done
+    
+    SV->>OSM: updateBeneficialOwnership(asset, vault, Buyer, newBalance)
+    OSM->>AR: updateBeneficialOwnership(asset, vault, Buyer, newBalance)
+    Note over AR: Update beneficial ownership registry state
+    AR-->>OSM: Done
+    OSM-->>SV: Done
+    
+    Note over OSM: Emits SyncRouted(caller, asset, vault, investor, balance, reasonCode)
+    OSM-->>Indexer: Capture SyncRouted Event
+    Indexer-->>DB: Update Off-Chain Beneficial Ownership state
+```
+
+---
+
+## 3. Contract Features & Functions
+
+### 3.1 `IOwnershipSync` Interface
+Defines the communication protocol between Layer 3 Vaults and Layer 2 registries.
+```solidity
+interface IOwnershipSync {
+    event BeneficialOwnershipUpdated(
+        address indexed asset,
+        address indexed vault,
+        address indexed investor,
+        uint256 balance,
+        uint256 timestamp
+    );
+
+    function updateBeneficialOwnership(
+        address asset,
+        address vault,
+        address investor,
+        uint256 balance
+    ) external;
+
+    function updateBeneficialOwnershipBatch(
+        address asset,
+        address vault,
+        address[] calldata investors,
+        uint256[] calldata balances
+    ) external;
+}
+```
+
+### 3.2 `OwnershipSyncManager` (Middleware Router)
+- **Role:** Enforces caller authorization (only registered vaults or authorized modules can trigger updates).
+- **Enriched Logging:** Emits `SyncRouted` events decorated with `reasonCode` metadata (e.g., `VAULT_TRANSFER`, `PRIMARY_ISSUANCE`, `REDEMPTION`).
+- **Access Control:** Employs OpenZeppelin's `AccessControl` to manage administrators and authorized callers.
+
+### 3.3 `AssetRegistry` (Beneficial Ownership Register)
+- **Role:** Acts as the decentralized Beneficial Ownership Register (BOR).
+- **UPGRADABILITY SANITY:** To preserve storage slot compatibility for the UUPS proxy deployed on Sepolia, deprecated storage mappings (`_ownerIndex`, `_ownerIndexPos`, `_vaultSummary`) are retained as inactive placeholders. This prevents storage collision corruption during compiler linearization.
+
+---
+
+## 4. Security & Compliance Controls
+
+1. **Access Boundaries:** Vaults cannot update the registry directly. They must route calls through `OwnershipSyncManager` which validates registration in `AssetRegistry` via the `onlyAuthorized` modifier.
+2. **Reentrancy Protection:** All state modifications in the registries and routers utilize state-updating patterns before nested external contract calls, paired with the `nonReentrant` modifier in the `RedemptionManager` and `LifecycleExitManager`.
+3. **EIP-1967 UUPS Upgrade Safety:** Storage slots are strictly checked using the OpenZeppelin upgrades plugin layout checks. State variables must not be deleted or rearranged.
+
+---
+
+## 5. Indexer Integration (The Graph Subgraph Example)
+
+To track real-time beneficial ownership and routing logs off-chain, configure a Subgraph mapping for `OwnershipSyncManager`.
+
+### 5.1 `subgraph.yaml` Configuration
+```yaml
+specVersion: 0.0.5
+schema:
+  file: ./schema.graphql
+dataSources:
+  - kind: ethereum
+    name: OwnershipSyncManager
+    network: sepolia
+    source:
+      address: "0xAEA3f4E28c9F0122EB8eD2773b79c9743421D007"
+      abi: OwnershipSyncManager
+      startBlock: 6200000
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.7
+      language: wasm/assemblyscript
+      entities:
+        - BeneficialOwnerRecord
+        - OwnershipSyncRoute
+      abis:
+        - name: OwnershipSyncManager
+          file: ./abis/OwnershipSyncManager.json
+      eventHandlers:
+        - event: BeneficialOwnershipUpdated(indexed address,indexed address,indexed address,uint256,uint256)
+          handler: handleBeneficialOwnershipUpdated
+        - event: SyncRouted(indexed address,indexed address,indexed address,address,uint256,bytes32)
+          handler: handleSyncRouted
+      file: ./src/mapping.ts
+```
+
+### 5.2 `schema.graphql` Schema
+```graphql
+type BeneficialOwnerRecord @entity {
+  id: ID! # assetAddress-vaultAddress-investorAddress
+  asset: Bytes!
+  vault: Bytes!
+  investor: Bytes!
+  shares: BigInt!
+  lastUpdated: BigInt!
+}
+
+type OwnershipSyncRoute @entity {
+  id: ID! # txHash-logIndex
+  caller: Bytes!
+  asset: Bytes!
+  vault: Bytes!
+  investor: Bytes!
+  balance: BigInt!
+  reasonCode: Bytes!
+  timestamp: BigInt!
+}
+```
+
+### 5.3 `mapping.ts` AssemblyScript Handler
+```typescript
+import { BeneficialOwnershipUpdated, SyncRouted } from "../generated/OwnershipSyncManager/OwnershipSyncManager"
+import { BeneficialOwnerRecord, OwnershipSyncRoute } from "../generated/schema"
+
+export function handleBeneficialOwnershipUpdated(event: BeneficialOwnershipUpdated): void {
+  let id = event.params.asset.toHexString() + "-" + 
+           event.params.vault.toHexString() + "-" + 
+           event.params.investor.toHexString();
+           
+  let record = BeneficialOwnerRecord.load(id);
+  if (!record) {
+    record = new BeneficialOwnerRecord(id);
+    record.asset = event.params.asset;
+    record.vault = event.params.vault;
+    record.investor = event.params.investor;
+  }
+  
+  record.shares = event.params.balance;
+  record.lastUpdated = event.params.timestamp;
+  record.save();
+}
+
+export function handleSyncRouted(event: SyncRouted): void {
+  let routeId = event.transaction.hash.toHexString() + "-" + event.logIndex.toString();
+  let route = new OwnershipSyncRoute(routeId);
+  
+  route.caller = event.params.caller;
+  route.asset = event.params.asset;
+  route.vault = event.params.vault;
+  route.investor = event.params.investor;
+  route.balance = event.params.balance;
+  route.reasonCode = event.params.reasonCode;
+  route.timestamp = event.block.timestamp;
+  
+  route.save();
+}
+```
+
+---
+
+## 6. Backend Integration (Node.js & WebSockets Example)
+
+A Node.js backend service listens for sync events to update off-chain order books, check limits, and broadcast balance updates via WebSockets.
+
+### 6.1 Event Listener Service (`listener.ts`)
+```typescript
+import { ethers } from "ethers";
+import { Server } from "ws";
+
+const provider = new ethers.JsonRpcProvider(process.env.RPC_URL);
+const wsServer = new Server({ port: 8080 });
+
+const SYNC_MANAGER_ADDRESS = "0xAEA3f4E28c9F0122EB8eD2773b79c9743421D007";
+const SYNC_MANAGER_ABI = [
+  "event SyncRouted(address indexed caller, address indexed asset, address indexed vault, address investor, uint256 balance, bytes32 reasonCode)"
+];
+
+const contract = new ethers.Contract(SYNC_MANAGER_ADDRESS, SYNC_MANAGER_ABI, provider);
+
+function broadcastBalanceUpdate(investor: string, asset: string, balance: string, reason: string) {
+  const payload = JSON.stringify({
+    event: "BALANCE_SYNC",
+    data: { investor, asset, balance: ethers.formatEther(balance), reason }
+  });
+  
+  wsServer.clients.forEach(client => {
+    if (client.readyState === 1) {
+      client.send(payload);
+    }
+  });
+}
+
+export function startListener() {
+  console.log("Listening for beneficial ownership synchronization routing events...");
+  
+  contract.on("SyncRouted", async (caller, asset, vault, investor, balance, reasonCode, event) => {
+    const reason = ethers.decodeBytes32String(reasonCode);
+    console.log(`Sync Routed: Investor: ${investor} | Asset: ${asset} | Balance: ${ethers.formatEther(balance)} | Reason: ${reason}`);
+    
+    try {
+      // 1. Update SQL Database beneficial ownership cache
+      await db.updateOwnershipRecord({
+        investorAddress: investor.toLowerCase(),
+        assetAddress: asset.toLowerCase(),
+        vaultAddress: vault.toLowerCase(),
+        shares: balance.toString(),
+        txHash: event.log.transactionHash
+      });
+      
+      // 2. Adjust or cancel open Limit Orders if balance fell below active order thresholds
+      await db.validateAndPruneOrderbook(investor, asset, balance);
+
+      // 3. Broadcast real-time portfolio updates to clients
+      broadcastBalanceUpdate(investor, asset, balance, reason);
+      
+    } catch (error) {
+      console.error("Failed to process sync route update in backend:", error);
+    }
+  });
+}
+```
+
+### 6.2 Database Updates Implementation Example (SQL)
+```sql
+-- Upsert beneficial ownership tracking cache
+INSERT INTO beneficial_ownership (investor_address, asset_address, vault_address, shares, last_updated_tx)
+VALUES ($1, $2, $3, $4, $5)
+ON CONFLICT (investor_address, asset_address, vault_address)
+DO UPDATE SET 
+  shares = EXCLUDED.shares,
+  last_updated_tx = EXCLUDED.last_updated_tx,
+  updated_at = NOW();
+
+-- Automatically cancel active sell orders if holding drops below active sell size
+UPDATE orders 
+SET status = 'CANCELLED', cancellation_reason = 'INSUFFICIENT_HOLDINGS_RECONCILIATION'
+WHERE investor_address = $1 
+  AND asset_address = $2 
+  AND order_type = 'SELL' 
+  AND quantity > $3;
+```

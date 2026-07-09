@@ -59,7 +59,8 @@ interface ISyncVault {
         string calldata name_,
         string calldata symbol_,
         address admin,
-        address assetRegistry_
+        address assetRegistry_,
+        address syncManager_
     ) external;
     function distributeYield(uint256 amount) external;
     function totalMinted() external view returns (uint256);

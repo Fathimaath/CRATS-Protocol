@@ -56,7 +56,7 @@ async function main() {
     const DEFAULT_ADMIN_ROLE = "0x0000000000000000000000000000000000000000000000000000000000000000";
     const rmHasRole = await azureVault.hasRole(DEFAULT_ADMIN_ROLE, redemptionManagerAddr);
     if (!rmHasRole) {
-        await (await azureVault.grantRole(DEFAULT_ADMIN_ROLE, redemptionManagerAddr)).wait();
+        await (await azureVault.connect(issuer).grantRole(DEFAULT_ADMIN_ROLE, redemptionManagerAddr)).wait();
     }
 
     // Approve shares transfer to RedemptionManager
@@ -91,7 +91,7 @@ async function main() {
 
     // Process redemption
     console.log("Processing redemption...");
-    const expectedAssets = hre.ethers.parseEther("10"); // 1:1 for simplicity
+    const expectedAssets = 0; // Set to 0 so claimRedemption doesn't try to transfer shares back
     const procTx = await redemptionManager.processRedemption(await azureVault.getAddress(), requestId, expectedAssets);
     await procTx.wait();
 

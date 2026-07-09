@@ -45,18 +45,21 @@ contract AssetRegistry is
     // assetToken => vault => investor => BeneficialOwner
     mapping(address => mapping(address => mapping(address => BeneficialOwner))) private _owners;
     
-    // assetToken => vault => investor list (for enumeration)
+    // assetToken => vault => investor list (for enumeration) - Deprecated but kept for storage layout compatibility
     mapping(address => mapping(address => address[])) private _ownerIndex;
     
-    // assetToken => vault => investor => index in ownerIndex (1-based; 0 = not present)
+    // assetToken => vault => investor => index in ownerIndex (1-based; 0 = not present) - Deprecated but kept for storage layout compatibility
     mapping(address => mapping(address => mapping(address => uint256))) private _ownerIndexPos;
 
     // assetToken => registered vault addresses
     mapping(address => address[]) private _vaults;
     mapping(address => mapping(address => bool)) private _vaultRegistered;
 
-    // assetToken => vault => VaultSummary cache
+    // assetToken => vault => VaultSummary cache - Deprecated but kept for storage layout compatibility
     mapping(address => mapping(address => VaultSummary)) private _vaultSummary;
+
+    // Role for the OwnershipSyncManager middleware
+    bytes32 public constant SYNC_MANAGER_ROLE = keccak256("SYNC_MANAGER_ROLE");
 
     /// @custom:oz-upgrades-unsafe-allow constructor
     constructor() {
@@ -248,22 +251,22 @@ contract AssetRegistry is
         emit VaultRegistered(assetToken, vault, block.timestamp);
     }
 
-    function syncOwner(
+    function updateBeneficialOwnership(
         address assetToken,
+        address vault,
         address investor,
         uint256 newShares
-    ) external override onlyRole(AssetConfig.VAULT_ROLE) {
-        address vault = msg.sender;
+    ) external override onlyRole(SYNC_MANAGER_ROLE) {
         require(_vaultRegistered[assetToken][vault], "AssetRegistry: vault not registered");
         _syncSingle(assetToken, vault, investor, newShares);
     }
 
-    function syncOwnerBatch(
+    function updateBeneficialOwnershipBatch(
         address assetToken,
+        address vault,
         address[] calldata investors,
         uint256[] calldata newShares
-    ) external override onlyRole(AssetConfig.VAULT_ROLE) {
-        address vault = msg.sender;
+    ) external override onlyRole(SYNC_MANAGER_ROLE) {
         require(_vaultRegistered[assetToken][vault], "AssetRegistry: vault not registered");
         require(investors.length == newShares.length, "AssetRegistry: length mismatch");
 
@@ -296,7 +299,6 @@ contract AssetRegistry is
             : 0;
 
         BeneficialOwner storage record = _owners[assetToken][vault][investor];
-        bool isNew = !record.isActive;
 
         record.investor = investor;
         record.vaultShares = newShares;
@@ -304,20 +306,6 @@ contract AssetRegistry is
         record.bpsOwnership = bpsOwnership;
         record.lastUpdated = block.timestamp;
         record.isActive = true;
-
-        if (isNew) {
-            _ownerIndex[assetToken][vault].push(investor);
-            _ownerIndexPos[assetToken][vault][investor] = _ownerIndex[assetToken][vault].length;
-        }
-
-        _vaultSummary[assetToken][vault] = VaultSummary({
-            vault: vault,
-            totalShares: totalShares,
-            totalAssets: totalAssets,
-            sharePrice: sharePrice,
-            ownerCount: _ownerIndex[assetToken][vault].length,
-            lastSynced: block.timestamp
-        });
 
         emit BeneficialOwnerUpdated(assetToken, vault, investor, newShares, aptClaim, bpsOwnership, block.timestamp);
     }
@@ -336,27 +324,6 @@ contract AssetRegistry is
         record.bpsOwnership = 0;
         record.lastUpdated = block.timestamp;
 
-        uint256 pos = _ownerIndexPos[assetToken][vault][investor];
-        uint256 last = _ownerIndex[assetToken][vault].length;
-        if (pos != last) {
-            address moved = _ownerIndex[assetToken][vault][last - 1];
-            _ownerIndex[assetToken][vault][pos - 1] = moved;
-            _ownerIndexPos[assetToken][vault][moved] = pos;
-        }
-        _ownerIndex[assetToken][vault].pop();
-        delete _ownerIndexPos[assetToken][vault][investor];
-
-        // Update Summary Cache
-        IVaultView vaultView = IVaultView(vault);
-        _vaultSummary[assetToken][vault] = VaultSummary({
-            vault: vault,
-            totalShares: vaultView.totalSupply(),
-            totalAssets: vaultView.totalAssets(),
-            sharePrice: vaultView.totalSupply() > 0 ? (vaultView.totalAssets() * 1e18) / vaultView.totalSupply() : 1e18,
-            ownerCount: _ownerIndex[assetToken][vault].length,
-            lastSynced: block.timestamp
-        });
-
         emit BeneficialOwnerRemoved(assetToken, vault, investor, block.timestamp);
     }
 
@@ -370,36 +337,11 @@ contract AssetRegistry is
         return _owners[assetToken][vault][investor];
     }
 
-    function getVaultOwners(
+    function isVaultRegistered(
         address assetToken,
         address vault
-    ) external view override returns (BeneficialOwner[] memory) {
-        address[] storage owners = _ownerIndex[assetToken][vault];
-        BeneficialOwner[] memory result = new BeneficialOwner[](owners.length);
-        for (uint256 i = 0; i < owners.length; i++) {
-            result[i] = _owners[assetToken][vault][owners[i]];
-        }
-        return result;
-    }
-
-    function getAllOwners(
-        address assetToken
-    ) external view override returns (BeneficialOwner[] memory) {
-        address[] memory vaults = _vaults[assetToken];
-        uint256 total;
-        for (uint256 v = 0; v < vaults.length; v++) {
-            total += _ownerIndex[assetToken][vaults[v]].length;
-        }
-
-        BeneficialOwner[] memory result = new BeneficialOwner[](total);
-        uint256 idx;
-        for (uint256 v = 0; v < vaults.length; v++) {
-            address[] storage owners = _ownerIndex[assetToken][vaults[v]];
-            for (uint256 i = 0; i < owners.length; i++) {
-                result[idx++] = _owners[assetToken][vaults[v]][owners[i]];
-            }
-        }
-        return result;
+    ) external view override returns (bool) {
+        return _vaultRegistered[assetToken][vault];
     }
 
     function getTotalClaim(
@@ -414,35 +356,6 @@ contract AssetRegistry is
                 totalBps += record.bpsOwnership;
             }
         }
-    }
-
-    function getVaultSummary(
-        address assetToken,
-        address vault
-    ) external view override returns (VaultSummary memory) {
-        return _vaultSummary[assetToken][vault];
-    }
-
-    function validateInvariant(
-        address assetToken,
-        address vault
-    ) external view override returns (bool isValid, uint256 delta) {
-        uint256 sumClaims;
-        address[] storage owners = _ownerIndex[assetToken][vault];
-        for (uint256 i = 0; i < owners.length; i++) {
-            sumClaims += _owners[assetToken][vault][owners[i]].aptClaim;
-        }
-        uint256 vaultTotal = IVaultView(vault).totalAssets();
-        // Account for pending fee deductions (§5.5)
-        if (feeEngine != address(0)) {
-            uint256 pendingMgmt = IFeeEngine(feeEngine).pendingMgmtFees(vault);
-            uint256 pendingPerf  = IFeeEngine(feeEngine).pendingPerfFees(vault);
-            vaultTotal = vaultTotal > pendingMgmt + pendingPerf
-                ? vaultTotal - pendingMgmt - pendingPerf
-                : 0;
-        }
-        isValid = sumClaims == vaultTotal;
-        delta = sumClaims > vaultTotal ? sumClaims - vaultTotal : vaultTotal - sumClaims;
     }
 
     // === Redemption Configuration State ===

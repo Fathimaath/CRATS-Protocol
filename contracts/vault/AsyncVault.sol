@@ -56,13 +56,14 @@ contract AsyncVault is
         string memory name_,
         string memory symbol_,
         address admin,
-        address assetRegistry_
+        address assetRegistry_,
+        address syncManager_
     ) public initializer {
         __ERC4626_init(IERC20(asset_));
         __ERC20_init(name_, symbol_);
         __AccessControl_init();
         __ReentrancyGuard_init();
-        __BaseVault_init(asset_, assetRegistry_);
+        __BaseVault_init(asset_, assetRegistry_, syncManager_);
 
         _grantRole(DEFAULT_ADMIN_ROLE, admin);
         _grantRole(OPERATOR_ROLE, admin);
@@ -107,8 +108,8 @@ contract AsyncVault is
         requestId = _nextDepositRequestId[controller]++;
         
         // BOR sync: reflect pending position
-        if (address(assetRegistry) != address(0)) {
-            assetRegistry.syncOwner(asset(), controller, balanceOf(controller) + convertToShares(assets));
+        if (address(syncManager) != address(0)) {
+            syncManager.updateBeneficialOwnership(asset(), address(this), controller, balanceOf(controller) + convertToShares(assets));
         }
         
         emit DepositRequest(controller, owner, requestId, msg.sender, assets);
@@ -140,8 +141,8 @@ contract AsyncVault is
         requestId = _nextRedeemRequestId[controller]++;
         
         // BOR sync: reflect reduction
-        if (address(assetRegistry) != address(0)) {
-            assetRegistry.syncOwner(asset(), owner, balanceOf(owner));
+        if (address(syncManager) != address(0)) {
+            syncManager.updateBeneficialOwnership(asset(), address(this), owner, balanceOf(owner));
         }
         
         emit RedeemRequest(controller, owner, requestId, msg.sender, shares);

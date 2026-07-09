@@ -100,55 +100,38 @@ async function deployAndInitializeLayer1() {
   const [admin, user1, user2, regulator, compliance, kycProvider] = await ethers.getSigners();
 
   // Deploy KYCProvidersRegistry
-  const KYCProvidersRegistry = await ethers.getContractFactory("KYCProvidersRegistry");
-  const kycRegistry = await KYCProvidersRegistry.deploy();
-  await kycRegistry.waitForDeployment();
-  await kycRegistry.initialize(await admin.getAddress());
+  const kycRegistry = await deployUpgradeable("KYCProvidersRegistry", [await admin.getAddress()]);
 
   // Deploy IdentitySBT
-  const IdentitySBT = await ethers.getContractFactory("IdentitySBT");
-  const identitySBT = await IdentitySBT.deploy();
-  await identitySBT.waitForDeployment();
-  await identitySBT.initialize("CRATS Identity", "CRATSID", await admin.getAddress());
+  const identitySBT = await deployUpgradeable("IdentitySBT", ["CRATS Identity", "CRATSID", await admin.getAddress()]);
 
   // Deploy IdentityRegistry
-  const IdentityRegistry = await ethers.getContractFactory("IdentityRegistry");
-  const identityRegistry = await IdentityRegistry.deploy();
-  await identityRegistry.waitForDeployment();
-  await identityRegistry.initialize(
+  const identityRegistry = await deployUpgradeable("IdentityRegistry", [
     await admin.getAddress(),
     await identitySBT.getAddress(),
     await kycRegistry.getAddress()
-  );
+  ]);
 
   // Deploy Compliance
-  const Compliance = await ethers.getContractFactory("Compliance");
-  const complianceModule = await Compliance.deploy();
-  await complianceModule.waitForDeployment();
-  await complianceModule.initialize(await admin.getAddress(), await identityRegistry.getAddress());
+  const complianceModule = await deployUpgradeable("Compliance", [await admin.getAddress(), await identityRegistry.getAddress()]);
 
   // Deploy CircuitBreakerModule
-  const CircuitBreakerModule = await ethers.getContractFactory("CircuitBreakerModule");
-  const circuitBreaker = await CircuitBreakerModule.deploy();
-  await circuitBreaker.waitForDeployment();
-  await circuitBreaker.initialize(await admin.getAddress());
+  const circuitBreaker = await deployUpgradeable("contracts/asset/CircuitBreakerModule.sol:CircuitBreakerModule", [await admin.getAddress()]);
 
   // Deploy TravelRuleModule
-  const TravelRuleModule = await ethers.getContractFactory("TravelRuleModule");
-  const travelRuleModule = await TravelRuleModule.deploy();
-  await travelRuleModule.waitForDeployment();
-  await travelRuleModule.initialize(await admin.getAddress(), await identityRegistry.getAddress());
+  const travelRuleModule = await deployUpgradeable("TravelRuleModule", [
+    await admin.getAddress(),
+    await identityRegistry.getAddress(),
+    ethers.parseEther("1000")
+  ]);
 
   // Deploy InvestorRightsRegistry
-  const InvestorRightsRegistry = await ethers.getContractFactory("InvestorRightsRegistry");
-  const investorRightsRegistry = await InvestorRightsRegistry.deploy();
-  await investorRightsRegistry.waitForDeployment();
-  await investorRightsRegistry.initialize(await admin.getAddress(), await identityRegistry.getAddress());
+  const investorRightsRegistry = await deployUpgradeable("InvestorRightsRegistry", [await admin.getAddress(), await identityRegistry.getAddress()]);
 
   // Setup roles
-  const COMPLIANCE_ROLE = await complianceModule.COMPLIANCE_ROLE();
-  const REGULATOR_ROLE = await complianceModule.REGULATOR_ROLE();
-  const KYC_PROVIDER_ROLE = await complianceModule.KYC_PROVIDER_ROLE();
+  const COMPLIANCE_ROLE = ethers.keccak256(ethers.toUtf8Bytes("COMPLIANCE_ROLE"));
+  const REGULATOR_ROLE = ethers.keccak256(ethers.toUtf8Bytes("REGULATOR_ROLE"));
+  const KYC_PROVIDER_ROLE = ethers.keccak256(ethers.toUtf8Bytes("KYC_PROVIDER_ROLE"));
 
   await complianceModule.grantRole(COMPLIANCE_ROLE, await compliance.getAddress());
   await complianceModule.grantRole(REGULATOR_ROLE, await regulator.getAddress());
@@ -186,25 +169,19 @@ async function deployLayer2Fixtures(layer1Contracts) {
   const assetTokenImpl = await AssetToken.deploy();
 
   // Deploy AssetFactory
-  const AssetFactory = await ethers.getContractFactory("AssetFactory");
-  const assetFactory = await AssetFactory.deploy();
-  await assetFactory.initialize(
+  const assetFactory = await deployUpgradeable("AssetFactory", [
     await admin.getAddress(),
     await assetTokenImpl.getAddress(),
     await identityRegistry.getAddress(),
     await complianceModule.getAddress(),
     await circuitBreaker.getAddress()
-  );
+  ]);
 
   // Deploy AssetOracle
-  const AssetOracle = await ethers.getContractFactory("AssetOracle");
-  const assetOracle = await AssetOracle.deploy();
-  await assetOracle.initialize(await admin.getAddress());
+  const assetOracle = await deployUpgradeable("AssetOracle", [await admin.getAddress()]);
 
   // Deploy AssetRegistry
-  const AssetRegistry = await ethers.getContractFactory("AssetRegistry");
-  const assetRegistry = await AssetRegistry.deploy();
-  await assetRegistry.initialize(await admin.getAddress());
+  const assetRegistry = await deployUpgradeable("AssetRegistry", [await admin.getAddress()]);
 
   // Deploy plugins
   const RealEstatePlugin = await ethers.getContractFactory("RealEstatePlugin");
@@ -249,22 +226,25 @@ async function deployLayer2Fixtures(layer1Contracts) {
  * @param role - User role
  */
 async function registerIdentity(identitySBT, identityRegistry, kycProvider, user, jurisdiction, role) {
-  const didHash = ethers.keccak256(ethers.toUtf8Bytes(`did:crats:${user.address}`));
-  const did = `did:crats:${user.address}`;
+  const userAddress = user.address || await user.getAddress();
+  const kycProviderAddress = kycProvider.address || await kycProvider.getAddress();
+  const didHash = ethers.keccak256(ethers.toUtf8Bytes(`did:crats:${userAddress}`));
+  const did = `did:crats:${userAddress}`;
   const expiresAt = Math.floor(Date.now() / 1000) + 63072000;
 
   // Grant IDENTITY_MANAGER_ROLE to kycProvider if not already granted
   const IDENTITY_MANAGER_ROLE = await identitySBT.IDENTITY_MANAGER_ROLE();
-  const hasRole = await identitySBT.hasRole(IDENTITY_MANAGER_ROLE, kycProvider.address);
+  const hasRole = await identitySBT.hasRole(IDENTITY_MANAGER_ROLE, kycProviderAddress);
   if (!hasRole) {
     // Admin (deployer) grants the role to kycProvider
     const signers = await ethers.getSigners();
     const admin = signers[0]; // First signer is admin
-    await identitySBT.connect(admin).grantRole(IDENTITY_MANAGER_ROLE, kycProvider.address);
+    const adminAddress = admin.address || await admin.getAddress();
+    await identitySBT.connect(admin).grantRole(IDENTITY_MANAGER_ROLE, kycProviderAddress);
   }
 
   await identitySBT.connect(kycProvider).registerIdentity(
-    user.address,
+    userAddress,
     role,
     jurisdiction,
     didHash,

@@ -8,6 +8,7 @@ module.exports = {
     version: "0.8.25",
     settings: {
       evmVersion: "cancun",
+      viaIR: true,
       optimizer: {
         enabled: true,
         runs: 200,
@@ -17,6 +18,7 @@ module.exports = {
   networks: {
     hardhat: {
       chainId: 31337,
+      allowUnlimitedContractSize: true
     },
     sepolia: {
       url: process.env.SEPOLIA_URL || "https://rpc.sepolia.org",

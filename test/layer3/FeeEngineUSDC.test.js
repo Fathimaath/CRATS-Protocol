@@ -74,7 +74,8 @@ describe("Layer 3 - FeeEngine & SyncVault USDC Fee Flow", function () {
       "Sync Vault Token",
       "sVT",
       admin.address,
-      await feeEngine.getAddress()
+      await feeEngine.getAddress(),
+      ethers.ZeroAddress
     );
 
     // Setup vault settings (default to address(0) to skip compliance in unit tests)
