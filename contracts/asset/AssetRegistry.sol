@@ -369,6 +369,11 @@ contract AssetRegistry is
     mapping(address => bool) private _assetRedemptionInitialized;
     mapping(address => PendingOverride) public pendingOverrides;
 
+    mapping(address => uint8) public assetArchetype;  // maps assetToken => Archetype
+    mapping(address => bytes32) public assetDMSDocSet;
+    mapping(address => uint8) public vaultLifecycleStatus; // maps vault => Status enum
+    mapping(address => address) public carbonMetadataStore; // optional mapping
+
     uint256 public constant TIMELOCK_DELAY = 48 hours;
 
     function setAssetRedemptionConfig(address assetToken, bool enabled) external override {
@@ -426,6 +431,23 @@ contract AssetRegistry is
         require(pendingOverrides[assetToken].exists, "AssetRegistry: no pending override");
         delete pendingOverrides[assetToken];
         emit OverrideCancelled(assetToken);
+    }
+
+    function setAssetArchetype(address assetToken, uint8 archetype) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        assetArchetype[assetToken] = archetype;
+    }
+
+    function setAssetDMSDocSet(address assetToken, bytes32 docSet) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        assetDMSDocSet[assetToken] = docSet;
+    }
+
+    function setVaultLifecycleStatus(address vault, uint8 status) external {
+        require(hasRole(SYNC_MANAGER_ROLE, msg.sender) || hasRole(DEFAULT_ADMIN_ROLE, msg.sender), "AssetRegistry: unauthorized");
+        vaultLifecycleStatus[vault] = status;
+    }
+
+    function setCarbonMetadataStore(address assetToken, address store) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        carbonMetadataStore[assetToken] = store;
     }
 }
 

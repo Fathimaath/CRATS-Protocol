@@ -2,7 +2,7 @@
   "network": "sepolia",
   "chainId": "11155111",
   "deployer": "0x5537dbc19eeE936A615B151c8C5983FBF735C583",
-  "timestamp": "2026-07-09T14:23:14.766Z",
+  "timestamp": "2026-07-16T19:39:15.753Z",
   "contracts": {
     "kycRegistry": "0xb4C0CD81eA49Dc4AC94472004955C7EE9f99Dc5c",
     "identitySBT": "0x5e88d8a83dE2F46F6809BaA06299f5113f3607A7",
@@ -15,7 +15,7 @@
     "assetFactory": "0xeCd44390e9fC54d6f25726b7076FA5F601695F05",
     "assetRegistry": "0xb103311FFe01849201E892d07E984ad2A17ED62f",
     "realEstatePlugin": "0xC5c3c0916f02119ed16E70a5970FABA692D77496",
-    "syncVaultTemplate": "0x828129f4237CB12AE3cFA55261579483cd54e0d3",
+    "syncVaultTemplate": "0x5c81f5772D63204d764650E8F4c7DE9491c52aB5",
     "vaultFactory": "0x9334dB9f4AE063b2C4FdEb40F2a63a7149d52C3c",
     "yieldDistributor": "0xeE155a2DEeA1b4Fa4eEC51eA1b76343fd1BEA449",
     "usdc": "0xf3f6f980917e9304D8dC9828A463BDf4b59239D4",
@@ -41,8 +41,15 @@
     "asyncVaultTemplate": "0x73a464eA33549ac78B10A2Fa3Ab2E6f1B36FaDe2",
     "redemptionManager": "0x6D728934aCA64f45B98fE4e07aF6Bbe1C8956F52",
     "lifecycleExitManager": "0xC8af899eac24F755704a1ad287fCe62b77929a6c",
-    "syncManager": "0xAEA3f4E28c9F0122EB8eD2773b79c9743421D007",
-    "carbonCreditPlugin": "0xDc0E01a25b094ba83e43084824472F8dc0c7C737",
-    "carbonCreditPluginRegistered": true
+    "syncManager": "0x096DdB2087c2a896bb5Fda93aC84131e08A91DF5",
+    "carbonCreditPlugin": "0x8E97F22574b57F891b67575eA199012b5Ae59Bf2",
+    "carbonCreditPluginRegistered": true,
+    "dmsRegistry": "0x57dEBA4ac651FE6f1f19b005338E6eFda829869D",
+    "sanctionsOracle": "0x62514c01bC858938b16A1f419312aB28942d3b0C",
+    "carbonRetirementPlugin": "0x03Bca9A52a96182082cad4Fc19ED20e886Add346",
+    "carbonBatchManager": "0xE3dE123E20429F5D9d6cEd8C6C167e844f060a09",
+    "carbonMetadataStore": "0xe15431397391d67CE9573c3D12315E547569a44b",
+    "carbonRetirementManager": "0xCfF47b1eCEc9d7CEA9F1baEb17fd99cdb16A4193",
+    "governanceMultisig": "0x9F2CCD782AF98f1E212738F8cB68B76739d5a5D8"
   }
 }

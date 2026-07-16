@@ -53,6 +53,10 @@ contract SyncVault is
     address[] private _holderList;
     mapping(address => bool) private _isHolder;
 
+    address public treasury;
+    uint256 public lastDepositUSDCAmount;
+    bytes32 public pendingMintValidation;
+
     /// @custom:oz-upgrades-unsafe-allow constructor
     constructor() {
         _disableInitializers();
@@ -92,7 +96,12 @@ contract SyncVault is
     }
 
     function totalAssets() public view override(ERC4626Upgradeable, ISyncVault, BaseVault) returns (uint256) {
-        return IERC20(asset()).balanceOf(address(this));
+        uint256 assetBalance = IERC20(asset()).balanceOf(address(this));
+        if (navOracle == address(0)) {
+            return assetBalance;
+        }
+        uint256 navPerToken = INAVOracle(navOracle).getWeightedNAV(assetId);
+        return (assetBalance * navPerToken) / 1e18;
     }
 
     function _convertToShares(uint256 assets, Math.Rounding) internal pure override returns (uint256) {
@@ -370,6 +379,57 @@ contract SyncVault is
                 idx++;
             }
         }
+    }
+
+    function setTreasury(address _treasury) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        require(_treasury != address(0), "SyncVault: invalid treasury");
+        treasury = _treasury;
+    }
+
+    function depositFromTreasury(
+        uint256 assetTokens,
+        address investor,
+        uint256 usdcAmountPaid
+    ) external onlyRole(OPERATOR_ROLE) nonReentrant returns (uint256) {
+        require(!isClosed, "SyncVault: closed");
+        require(investor != address(0), "SyncVault: invalid investor");
+        require(assetTokens > 0, "SyncVault: zero asset tokens");
+        require(usdcAmountPaid > 0, "SyncVault: zero USDC amount");
+
+        _checkCompliance(investor);
+
+        // Fetch NAV per token and validate variance (AUD-03)
+        if (navOracle != address(0)) {
+            uint256 navPerToken = INAVOracle(navOracle).getNavForMintValidation(assetId);
+            require(navPerToken > 0, "SyncVault: invalid NAV from oracle");
+
+            uint256 expectedAsset = (usdcAmountPaid * 1e18) / navPerToken;
+            uint256 diff = assetTokens > expectedAsset ? assetTokens - expectedAsset : expectedAsset - assetTokens;
+            // Validate within 500 BPS (5%)
+            require(diff * 10000 / expectedAsset <= 500, "SyncVault: deposit variance exceeds threshold");
+        }
+
+        lastDepositUSDCAmount = usdcAmountPaid;
+
+        // Pull AssetTokens from Treasury (sender of this transaction)
+        IERC20(asset()).safeTransferFrom(msg.sender, address(this), assetTokens);
+
+        // Mint shares 1:1 to investor (shares = assetTokens)
+        _mint(investor, assetTokens);
+
+        // Update beneficial ownership via OwnershipSyncManager
+        if (address(syncManager) != address(0)) {
+            try IOwnershipSync(syncManager).updateBeneficialOwnership(
+                asset(),
+                address(this),
+                investor,
+                balanceOf(investor)
+            ) {} catch {}
+        }
+
+        emit Deposit(msg.sender, investor, assetTokens, assetTokens);
+
+        return assetTokens;
     }
 
     function closeVault() external {

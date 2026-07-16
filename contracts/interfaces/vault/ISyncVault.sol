@@ -65,4 +65,5 @@ interface ISyncVault {
     function distributeYield(uint256 amount) external;
     function totalMinted() external view returns (uint256);
     function totalBurned() external view returns (uint256);
+    function burnShares(address account, uint256 amount) external;
 }

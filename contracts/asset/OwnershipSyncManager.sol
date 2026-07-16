@@ -107,4 +107,24 @@ contract OwnershipSyncManager is IOwnershipSync, AccessControl {
             balances
         );
     }
+
+    bytes32 public constant CARBON_P2P_TRANSFER = keccak256("CARBON_P2P_TRANSFER");
+    bytes32 public constant CARBON_RETIREMENT   = keccak256("CARBON_RETIREMENT");
+
+    function updateOnVaultClosure(address asset, address vault) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        emit SyncRouted(msg.sender, asset, vault, address(0), 0, keccak256("VAULT_CLOSURE"));
+    }
+
+    function updateOnAsyncRequest(address asset, address vault, address investor, uint256 pendingShares) external onlyAuthorized(asset, vault) {
+        emit SyncRouted(msg.sender, asset, vault, investor, pendingShares, keccak256("ASYNC_REQUEST"));
+    }
+
+    function updateOnAsyncClaim(address asset, address vault, address investor, uint256 finalShares) external onlyAuthorized(asset, vault) {
+        emit SyncRouted(msg.sender, asset, vault, investor, finalShares, keccak256("ASYNC_CLAIM"));
+    }
+
+    function updateOnGovernanceRoleMigration(address asset, address vault, address oldAdmin, address newAdmin) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        emit SyncRouted(msg.sender, asset, vault, oldAdmin, 0, keccak256("GOVERNANCE_MIGRATION"));
+        emit SyncRouted(msg.sender, asset, vault, newAdmin, 0, keccak256("GOVERNANCE_MIGRATION"));
+    }
 }

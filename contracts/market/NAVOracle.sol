@@ -159,6 +159,7 @@ contract NAVOracle is
         bytes32 documentHash,
         ValuationMethod method
     ) external onlyRole(VALUER_ROLE) whenNotPaused {
+        require(documentHash != bytes32(0), "NAVOracle: PoR required");
         if (activeSubmission[assetId].assetValue > 0) {
             uint256 deviation = Math.max(assetValue, activeSubmission[assetId].assetValue)
                 - Math.min(assetValue, activeSubmission[assetId].assetValue);
@@ -204,11 +205,13 @@ contract NAVOracle is
         uint256 weightedSum;
         uint256 totalWeight;
 
-        if (_getSourceAge(assetId, ValuationMethod.FULL_APPRAISAL) <= cfg.appraisalMaxAge) {
-            weightedSum += _getSourceValue(assetId, ValuationMethod.FULL_APPRAISAL) * cfg.appraisalWeight;
-            totalWeight += cfg.appraisalWeight;
-        } else {
-            revert("Appraisal stale - trading halted");
+        if (cfg.appraisalWeight > 0) {
+            if (_getSourceAge(assetId, ValuationMethod.FULL_APPRAISAL) <= cfg.appraisalMaxAge) {
+                weightedSum += _getSourceValue(assetId, ValuationMethod.FULL_APPRAISAL) * cfg.appraisalWeight;
+                totalWeight += cfg.appraisalWeight;
+            } else {
+                revert("Appraisal stale - trading halted");
+            }
         }
 
         uint256 dcfAge = _getSourceAge(assetId, ValuationMethod.DCF_MODEL);
@@ -236,7 +239,11 @@ contract NAVOracle is
         return weightedSum / totalWeight;
     }
 
-    // ═══════════════════════════════════════════════════════════
+    function getNavForMintValidation(bytes32 assetId) external view returns (uint256) {
+        NAVState state = getNAVState(assetId);
+        require(state == NAVState.FRESH || state == NAVState.WARNING, "NAV not fresh");
+        return getWeightedNAV(assetId);
+    }
     // SECTION 3: COMPLETE NAV FORMULA
     // ═══════════════════════════════════════════════════════════
 
@@ -493,8 +500,9 @@ contract NAVOracle is
             + uint256(cfg.compWeight);
 
         require(totalWeight > 0, "Total weight must be > 0");
-        require(cfg.appraisalWeight > 0, "Appraisal weight must be > 0");
-        require(cfg.appraisalMaxAge > 0, "Appraisal max age must be > 0");
+        if (cfg.appraisalWeight > 0) {
+            require(cfg.appraisalMaxAge > 0, "Appraisal max age must be > 0");
+        }
 
         weightConfigs[assetId] = cfg;
         emit WeightConfigSet(assetId);
@@ -517,8 +525,9 @@ contract NAVOracle is
             + uint256(cfg.incomeWeight)
             + uint256(cfg.compWeight);
         require(totalWeight > 0, "Total weight must be > 0");
-        require(cfg.appraisalWeight > 0, "Appraisal weight must be > 0");
-        require(cfg.appraisalMaxAge > 0, "Appraisal max age must be > 0");
+        if (cfg.appraisalWeight > 0) {
+            require(cfg.appraisalMaxAge > 0, "Appraisal max age must be > 0");
+        }
 
         weightConfigs[assetId] = cfg;
 

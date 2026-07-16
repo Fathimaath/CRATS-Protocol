@@ -94,6 +94,7 @@ graph TD
         AT -->|"calls checkTransfer()"| CM[Compliance Module]
         AT -->|"hooks into"| CB[CircuitBreakerModule]
         AR[AssetRegistry] -->|"stores"| BOR[Beneficial Owner Registry]
+        OSM[OwnershipSyncManager] -->|"routes sync to"| AR
     end
 
     subgraph "Layer 3: Financials"
@@ -103,8 +104,8 @@ graph TD
         AV -->|"pulls NAV from"| NO
         NO -->|"checks fees from"| FE[FeeEngine]
         SV -->|"distributes income via"| YD[YieldDistributor]
-        SV -->|"syncs ownership to"| AR
-        AV -->|"syncs ownership to"| AR
+        SV -->|"syncs transfer to"| OSM
+        AV -->|"syncs transfer to"| OSM
     end
 
     subgraph "Layer 4: Markets"
@@ -194,7 +195,7 @@ Asset issuers deploy tokens representing RWAs (e.g. Real Estate, Debt). The `Ass
 Layer 3 aggregates asset tokens into investment vehicles. 
 - **Synchronous Vaults (`SyncVault`):** Standard ERC-4626 implementation for liquid assets where deposits/redemptions are executed atomically.
 - **Asynchronous Vaults (`AsyncVault`):** Compliance-gated, ERC-7540 asynchronous vaults. Deposits and redemptions undergo a multi-step request, fulfillment (by whitelisted operators/fulfillers), and claim lifecycle to accommodate RWA liquidity locks and regulatory settlement times.
-- **Look-Through Transparency:** Supported via the **Beneficial Owner Registry (BOR)**. During vault actions, the vault automatically syncs ownership state to the Layer 2 `AssetRegistry`.
+- **Look-Through Transparency:** Supported via the **Beneficial Owner Registry (BOR)**. During vault actions, the vault automatically syncs ownership state through the `OwnershipSyncManager` middleware to the Layer 2 `AssetRegistry`.
 - **EIP-1167 Clone Architecture:** Instantiated via `VaultFactory` using minimal proxies pointing to logic templates, ensuring ultra-low deployment gas costs.
 - **V6 Security Controls:** Zero-address guards on all state setters, admin-controlled emergency withdrawal, and UUPS upgrades for system-wide logic.
 
@@ -305,7 +306,7 @@ The EVM smart contracts represent the **execution and state layer**. All identit
 7.  **Primary Listing:** Vault is whitelisted on the Marketplace.
 8.  **Investment:** Onboarded investors deposit stablecoins (USDT) into the vault.
 9.  **Atomic Settlement:** `SettlementEngine` swaps the Treasury's `AssetTokens` for the investor's stablecoins.
-10. **Valuation & Sync:** `AssetToken` NAV is updated in `NAVOracle`. The Vault calls `syncOwner` on the `AssetRegistry` to update the Beneficial Owner Registry (BOR).
+10. **Valuation & Sync:** `AssetToken` NAV is updated in `NAVOracle`. The Vault triggers the `OwnershipSyncManager` middleware to update beneficial ownership records in `AssetRegistry` (BOR).
 11. **Yield Accrual:** Underlying asset rents/revenues are collected by the platform treasury.
 12. **Yield Distribution:** `YieldDistributor` pushes yield to the vault, inflating the share price to reflect yield accrual.
 13. **Secondary Market:** Investors exchange vault shares peer-to-peer via the `OrderBookEngine`.
@@ -576,30 +577,116 @@ npm run cli:nav <sepolia | localhost>
 
 To support institutional exit scenarios (such as real estate asset liquidations) and standard token redemptions, the protocol adds two dedicated managers at Layer 3: the `RedemptionManager` and the `LifecycleExitManager`.
 
-### 9.1 RedemptionManager (Immediate vs Queue-Based Redemption Lifecycle)
+### 9.1 Standard Exits (`RedemptionManager`)
 
 The `RedemptionManager` handles the standard investor redemption lifecycle for RWA assets:
-*   **Immediate Redemptions**: SyncVaults process immediate redemptions by pulling shares and returning assets atomically (subject to KYC checks).
-*   **Queue-Based Redemptions**: AsyncVaults (under EIP-7540) log redemption requests to the manager in a `PENDING` state. Upon verification and cash settlement by an operator, the request advances to `READY` and can be claimed by the investor.
-*   **Compliance Blockers**: In accordance with the v5.1 findings, if an investor is Restricted by compliance during a pending redemption, their request is held in the `PENDING` state and cannot advance to `READY` until the restriction expires or is removed.
+*   **Synchronous Settlement (SyncVault)**: Vaults execute immediate exits by calling ERC-4626 `redeem` or `withdraw`. The vault burns the shares and returns the underlying asset tokens atomically, subject to active identity registry whitelists.
+*   **Asynchronous Settlement (AsyncVault / EIP-7540)**: For illiquid real-world assets, redemptions use a multi-stage request pipeline:
+    1.  **Request**: Investor locks their shares in the vault contract and pays the stablecoin (USDC) exit fee. The request is created in the `PENDING` state.
+    2.  **Processing**: Operators verify property liquid reserves, calculate the final asset settlement amount, and mark the request `READY`.
+    3.  **Claim**: The investor calls `claimRedemption` to withdraw the underlying assets.
+*   **Compliance Hold State**: If an investor is restricted by the compliance layer during the `PENDING` stage, their request status transitions to `RESTRICTED` (or is held pending) and cannot advance to `READY` until compliance removes the restriction.
 
-### 9.2 LifecycleExitManager (Institutional RWA Liquidation Exit Workflow)
+### 9.2 Institutional Exit Liquidations (`LifecycleExitManager`)
 
-Real estate assets undergo a complete asset exit instead of individual investor redemptions. The `LifecycleExitManager` contract coordinates this:
-*   **Settlement Verification**: The asset manager must provide settlement evidence and obtain governance approval before payouts or burns begin.
-*   **Pro-rata Payout**: Calculates each investor's entitlement based on their vault share balance and pulls USDC to distribute to investors.
-*   **Escrow Routing**: If an investor is restricted by the compliance layer during execution, their USDC portion is routed to an escrow sub-balance and locked until the restriction resolves.
-*   **Programmatic Burning**: Programmatically burns the vault shares from investors and the underlying RWA token from the vault to conclude liquidation.
-*   **Vault Closure**: Shuts down the vault and registers it as CLOSED.
+Enables full-asset exits for real estate and other fractional properties:
+*   **Settlement Verification**: The asset issuer deposits the liquidated property's USDC funds into the `LifecycleExitManager` contract, which verifies the settlement size.
+*   **Escrow Routing**: Investors who are restricted by compliance when the exit is executed cannot receive payouts. The contract routes their pro-rata USDC entitlement to an escrow sub-balance.
+*   **Programmatic Burning**: Automates the burning of both the investor's vault shares (shares represent claims) and the underlying RWA asset tokens from the vault's custody.
+*   **Vault Closure**: Permanently shuts down the vault by calling `closeVault()`, ensuring no further transactions or fees can occur.
+*   **Guardian Emergency Pause**: Employs a pausable checkpoint that allows the Guardian role to freeze the liquidation process before payout/burning begins.
 
-### 9.3 Upgraded Compliance & Circuit Breaker Logic
+### 9.3 Advanced Security Mechanisms
 
-*   **Duration Caps**: Investor-level compliance restrictions are limited to a maximum of 180 days to prevent indefinite locking without active regulatory review.
-*   **Pausable Checkpoint**: The Guardian may pause the lifecycle exit process at any point before programmatic burning and vault closure begin. Once the final burn begins, the transaction executes atomically.
+1.  **Strict Separation of Roles**:
+    *   `DEFAULT_ADMIN_ROLE`: Configures registries and initializes/executes liquidations.
+    *   `GUARDIAN_ROLE`: Exercises emergency pause capabilities.
+    *   `PROCESSOR_ROLE`: Fulfills queued redemption requests.
+    *   `COMPLIANCE_ROLE`: Restricts/unrestricts individual investor addresses.
+2.  **Compliance Hold Caps**:
+    *   Investor restrictions imposed by compliance are capped at a maximum duration of **180 days** to ensure continuous regulatory review and prevent indefinite, unchecked asset locking.
+3.  **Zero-Address Safety Guards**:
+    *   All smart contract setters and initialization parameters require non-zero address checks.
+4.  **No Partial State Guarantee**:
+    *   Once the `LifecycleExitManager` executes an exit, it loops through beneficial owners, distributes payouts/escrow, burns shares/assets, and closes the vault within a single, atomic EVM transaction, ensuring no partial or corrupted exit states can occur.
 
-### 9.4 Automated BOR (Beneficial Owner Registry) Syncing
+### 9.4 Function & Method Signatures
 
-*   Vaults automatically synchronize share updates (mints, burns, transfers) to the `AssetRegistry` via the Beneficial Owner Registry (BOR) update hook. The vault must be registered in `AssetRegistry` from the admin account to obtain `VAULT_ROLE` permissions to sync.
+#### `RedemptionManager.sol` Core API
+```solidity
+/**
+ * @notice Submits a standard queue-based redemption request.
+ * @param vault Address of the SyncVault/AsyncVault.
+ * @param shares Amount of shares the investor wishes to redeem.
+ * @return requestId Unique incrementing identifier for the request.
+ */
+function requestRedemption(
+    address vault,
+    uint256 shares
+) external nonReentrant returns (uint256 requestId);
+
+/**
+ * @notice Fulfills a pending request (Operator only).
+ * @param vault Address of the vault.
+ * @param requestId The ID of the request to process.
+ * @param assets Actual amount of underlying assets allocated to this request.
+ */
+function processRedemption(
+    address vault,
+    uint256 requestId,
+    uint256 assets
+) external onlyRole(PROCESSOR_ROLE) nonReentrant;
+
+/**
+ * @notice Claims the underlying assets after processing.
+ * @param vault Address of the vault.
+ * @param requestId The ID of the request to claim.
+ */
+function claimRedemption(
+    address vault,
+    uint256 requestId
+) external nonReentrant;
+```
+
+#### `LifecycleExitManager.sol` Core API
+```solidity
+/**
+ * @notice Registers and locks the USDC settlement funds (Admin only).
+ * @param vault Address of the SyncVault to exit.
+ * @param settlementAmount The total USDC allocated to the vault liquidation.
+ */
+function verifySettlement(
+    address vault,
+    uint256 settlementAmount
+) external onlyRole(DEFAULT_ADMIN_ROLE);
+
+/**
+ * @notice Halts a verified exit before payouts are processed (Guardian only).
+ */
+function pauseExit(address vault) external onlyRole(GUARDIAN_ROLE);
+
+/**
+ * @notice Resumes a paused exit (Guardian only).
+ */
+function resumeExit(address vault) external onlyRole(GUARDIAN_ROLE);
+
+/**
+ * @notice Executes the pro-rata payouts, escrow routing, burns tokens, and closes the vault.
+ */
+function executeExit(
+    address vault,
+    address[] calldata investors
+) external onlyRole(DEFAULT_ADMIN_ROLE) nonReentrant;
+
+/**
+ * @notice Allows a previously restricted investor to withdraw their escrowed USDC once compliance is cleared.
+ */
+function claimEscrow(address vault) external nonReentrant;
+```
+
+### 9.5 Automated BOR (Beneficial Owner Registry) Syncing
+
+*   Vaults automatically synchronize share updates (mints, burns, transfers) through the `OwnershipSyncManager` middleware, which routes sync calls to `AssetRegistry` (BOR). The `OwnershipSyncManager` must be granted `SYNC_MANAGER_ROLE` on the `AssetRegistry`, and vaults must be registered in the registry to authorize updates.
 
 ---
 
@@ -765,8 +852,8 @@ function requestDeposit(uint256 assets, address controller, address owner)
     requestId = _nextDepositRequestId[controller]++;
     
     // BOR sync: reflect pending position
-    if (address(assetRegistry) != address(0)) {
-        assetRegistry.syncOwner(asset(), controller, balanceOf(controller) + convertToShares(assets));
+    if (address(syncManager) != address(0)) {
+        syncManager.updateBeneficialOwnership(asset(), address(this), controller, balanceOf(controller) + convertToShares(assets));
     }
     
     emit DepositRequest(controller, owner, requestId, msg.sender, assets);
@@ -826,14 +913,16 @@ function _update(
 ) internal virtual override {
     super._update(from, to, value);
 
-    // Sync the sender (if not mint)
-    if (from != address(0) && from != address(1)) {
-        try assetRegistry.syncOwner(assetToken, from, balanceOf(from)) {} catch {}
-    }
+    if (address(syncManager) != address(0)) {
+        // Sync the sender (if not mint)
+        if (from != address(0) && from != address(1)) {
+            try syncManager.updateBeneficialOwnership(assetToken, address(this), from, balanceOf(from)) {} catch {}
+        }
 
-    // Sync the receiver (if not burn)
-    if (to != address(0) && to != address(1)) {
-        try assetRegistry.syncOwner(assetToken, to, balanceOf(to)) {} catch {}
+        // Sync the receiver (if not burn)
+        if (to != address(0) && to != address(1)) {
+            try syncManager.updateBeneficialOwnership(assetToken, address(this), to, balanceOf(to)) {} catch {}
+        }
     }
 }
 ```
@@ -1009,50 +1098,196 @@ function requestRedemption(
 }
 ```
 
-#### `LifecycleExitManager.sol` (Atomic Asset Liquidation Exit & Escrow Routing)
+#### `LifecycleExitManager.sol` (Full Smart Contract Implementation)
 ```solidity
-// Executes the pro-rata liquidation payout, handles compliance escrow routing, and burns shares/assets
-function executeExit(address vault) external nonReentrant whenNotPaused {
-    ExitRecord storage record = exits[vault];
-    require(record.verified, "ExitManager: exit not verified");
-    require(record.status == ExitStatus.PENDING, "ExitManager: already executed");
-    require(IAssetRegistry(assetRegistry).isExitApproved(vault), "ExitManager: exit not approved by governance");
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.25;
 
-    record.status = ExitStatus.EXECUTING;
-    address assetToken = IVault(vault).asset();
-    uint256 totalShares = IERC20(vault).totalSupply();
-    uint256 settlementAmount = record.settlementAmount;
+import "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
+import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/utils/ReentrancyGuardUpgradeable.sol";
+import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import "../interfaces/asset/IAssetRegistry.sol";
+import "../interfaces/compliance/ICompliance.sol";
 
-    address[] memory investors = IAssetRegistry(assetRegistry).getVaultHolders(vault);
-    uint256 len = investors.length;
-    require(len > 0, "ExitManager: no investors");
+interface IVault {
+    function asset() external view returns (address);
+    function category() external view returns (bytes32);
+    function complianceModule() external view returns (address);
+    function totalSupply() external view returns (uint256);
+    function closeVault() external;
+    function burnShares(address account, uint256 amount) external;
+}
 
-    for (uint256 i = 0; i < len; i++) {
-        address investor = investors[i];
-        uint256 shares = IERC20(vault).balanceOf(investor);
-        if (shares == 0) continue;
+interface IAssetToken {
+    function burnFromExcludingAllowance(address account, uint256 amount) external;
+}
 
-        uint256 entitlement = (settlementAmount * shares) / totalShares;
-        if (entitlement == 0) continue;
+contract LifecycleExitManager is
+    Initializable,
+    AccessControlUpgradeable,
+    ReentrancyGuardUpgradeable,
+    UUPSUpgradeable
+{
+    using SafeERC20 for IERC20;
 
-        // Query investor compliance status via Compliance layer
-        bool isRestricted = ICompliance(complianceModule).isInvestorRestricted(assetToken, investor);
-        if (isRestricted) {
-            // Route to escrow sub-balance
-            escrowBalances[vault][investor] += entitlement;
-            emit FundsEscrowed(vault, investor, entitlement, block.timestamp);
-        } else {
-            usdc.safeTransfer(investor, entitlement);
-        }
+    bytes32 public constant GUARDIAN_ROLE = keccak256("GUARDIAN_ROLE");
 
-        // Programmatically burn vault shares and underlying asset tokens from the vault
-        IVault(vault).burnShares(investor, shares);
-        IAssetToken(assetToken).burnFromExcludingAllowance(vault, shares);
+    // L2 AssetRegistry
+    IAssetRegistry public assetRegistry;
+    IERC20 public usdc;
+
+    // States of exit
+    enum ExitStatus {
+        NONE,
+        VERIFIED,
+        PAUSED,
+        EXECUTED
     }
 
-    IVault(vault).closeVault();
-    record.status = ExitStatus.COMPLETED;
-    emit LifecycleExitExecuted(vault, settlementAmount, block.timestamp);
+    struct ExitInfo {
+        ExitStatus status;
+        uint256 settlementAmount;
+        uint256 verifiedAt;
+    }
+
+    // vault => ExitInfo
+    mapping(address => ExitInfo) public vaultExits;
+
+    // vault => investor => amount
+    mapping(address => mapping(address => uint256)) public escrowedSettlements;
+
+    event SettlementVerified(address indexed vault, uint256 settlementAmount, uint256 timestamp);
+    event ExitPaused(address indexed vault, uint256 timestamp);
+    event ExitResumed(address indexed vault, uint256 timestamp);
+    event LifecycleExitExecuted(address indexed vault, uint256 settlementAmount, uint256 timestamp);
+    event EscrowClaimed(address indexed vault, address indexed investor, uint256 amount);
+
+    /// @custom:oz-upgrades-unsafe-allow constructor
+    constructor() {
+        _disableInitializers();
+    }
+
+    function initialize(
+        address admin,
+        address _usdc,
+        address _assetRegistry
+    ) public initializer {
+        __AccessControl_init();
+        __ReentrancyGuard_init();
+        __UUPSUpgradeable_init();
+
+        _grantRole(DEFAULT_ADMIN_ROLE, admin);
+        _grantRole(GUARDIAN_ROLE, admin);
+
+        usdc = IERC20(_usdc);
+        assetRegistry = IAssetRegistry(_assetRegistry);
+    }
+
+    function verifySettlement(
+        address vault,
+        uint256 settlementAmount
+    ) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        require(vault != address(0), "LifecycleExitManager: invalid vault");
+        require(settlementAmount > 0, "LifecycleExitManager: amount must be positive");
+        require(vaultExits[vault].status == ExitStatus.NONE, "LifecycleExitManager: already initiated");
+
+        // Transfer settlement funds (USDC) from sender to this contract
+        usdc.safeTransferFrom(msg.sender, address(this), settlementAmount);
+
+        vaultExits[vault] = ExitInfo({
+            status: ExitStatus.VERIFIED,
+            settlementAmount: settlementAmount,
+            verifiedAt: block.timestamp
+        });
+
+        emit SettlementVerified(vault, settlementAmount, block.timestamp);
+    }
+
+    function pauseExit(address vault) external onlyRole(GUARDIAN_ROLE) {
+        require(vaultExits[vault].status == ExitStatus.VERIFIED, "LifecycleExitManager: can only pause pre-distribution");
+        vaultExits[vault].status = ExitStatus.PAUSED;
+        emit ExitPaused(vault, block.timestamp);
+    }
+
+    function resumeExit(address vault) external onlyRole(GUARDIAN_ROLE) {
+        require(vaultExits[vault].status == ExitStatus.PAUSED, "LifecycleExitManager: not paused");
+        vaultExits[vault].status = ExitStatus.VERIFIED;
+        emit ExitResumed(vault, block.timestamp);
+    }
+
+    function executeExit(
+        address vault,
+        address[] calldata investors
+    ) external onlyRole(DEFAULT_ADMIN_ROLE) nonReentrant {
+        ExitInfo storage exit = vaultExits[vault];
+        require(exit.status == ExitStatus.VERIFIED, "LifecycleExitManager: exit not verified or is paused");
+        require(investors.length > 0, "LifecycleExitManager: no investors provided");
+
+        uint256 settlementAmount = exit.settlementAmount;
+        exit.status = ExitStatus.EXECUTED;
+
+        address assetToken = IVault(vault).asset();
+        uint256 totalShares = IVault(vault).totalSupply();
+        require(totalShares > 0, "LifecycleExitManager: no shares to exit");
+
+        address comp = IVault(vault).complianceModule();
+
+        for (uint256 i = 0; i < investors.length; i++) {
+            address investor = investors[i];
+            IAssetRegistry.BeneficialOwner memory record = assetRegistry.getBeneficialOwner(assetToken, vault, investor);
+            uint256 shares = record.vaultShares;
+            if (shares == 0) continue;
+
+            uint256 entitlement = (shares * settlementAmount) / totalShares;
+            if (entitlement == 0) continue;
+
+            // Check if investor is restricted in Compliance
+            bool isRestricted = false;
+            if (comp != address(0)) {
+                isRestricted = ICompliance(comp).isInvestorRestricted(assetToken, investor);
+            }
+
+            if (isRestricted) {
+                // Route to escrow sub-balance
+                escrowedSettlements[vault][investor] += entitlement;
+            } else {
+                // Payout directly
+                usdc.safeTransfer(investor, entitlement);
+            }
+
+            // Programmatically burn vault shares
+            IVault(vault).burnShares(investor, shares);
+
+            // Programmatically burn asset tokens from the vault (which holds the underlying RWA)
+            IAssetToken(assetToken).burnFromExcludingAllowance(vault, shares);
+        }
+
+        // Close the vault
+        IVault(vault).closeVault();
+
+        emit LifecycleExitExecuted(vault, settlementAmount, block.timestamp);
+    }
+
+    function claimEscrow(address vault) external nonReentrant {
+        uint256 amount = escrowedSettlements[vault][msg.sender];
+        require(amount > 0, "LifecycleExitManager: no escrowed funds");
+
+        address assetToken = IVault(vault).asset();
+        address comp = IVault(vault).complianceModule();
+        if (comp != address(0)) {
+            require(!ICompliance(comp).isInvestorRestricted(assetToken, msg.sender), "LifecycleExitManager: investor still restricted");
+        }
+
+        escrowedSettlements[vault][msg.sender] = 0;
+        usdc.safeTransfer(msg.sender, amount);
+
+        emit EscrowClaimed(vault, msg.sender, amount);
+    }
+
+    function _authorizeUpgrade(address) internal override onlyRole(DEFAULT_ADMIN_ROLE) {}
 }
 ```
 
@@ -1060,7 +1295,7 @@ function executeExit(address vault) external nonReentrant whenNotPaused {
 
 ## 12. Deployed Contract Registry (Sepolia)
 
-> Last updated: **v8.0.0 — 2026-07-07**
+> Last updated: **v9.0.0 — 2026-07-09**
 
 ### Layer 1 — Identity
 | Contract | Address |
@@ -1079,22 +1314,26 @@ function executeExit(address vault) external nonReentrant whenNotPaused {
 | AssetToken (template) | `0xD1aB6DAC41cC010aE4a6f858824a55BFDF59A70a` |
 | AssetFactory | `0xeCd44390e9fC54d6f25726b7076FA5F601695F05` |
 | AssetRegistry | `0xb103311FFe01849201E892d07E984ad2A17ED62f` |
+| **OwnershipSyncManager** *(v9.0)* | `0xAEA3f4E28c9F0122EB8eD2773b79c9743421D007` |
 | RealEstatePlugin | `0xC5c3c0916f02119ed16E70a5970FABA692D77496` |
 | **FineArtPlugin** *(v7.0)* | `0x84887FF77a17Fd17c350E60ADbd54a25Abf0d8be` |
+| **CarbonCreditPlugin** *(v10.0)* | `Pending Local/Sepolia Deploy` |
+| **CarbonRetirementPlugin** *(v10.0)* | `Pending Local/Sepolia Deploy` |
 
 ### Layer 3 — Financial
 | Contract | Address |
 |---|---|
-| SyncVault (template) | `0x0EE0148e90F05478E524967C3322AdB5761D4C5E` |
-| AsyncVault (template) | `0x14CCb54eCD80a1C13E3B4757F82f7e5D2b0E3E1F` |
-| VaultFactory | `0x5759Aa4c0814D9D7e09043711462eE9C4362C921` |
+| SyncVault (template) | `0x828129f4237CB12AE3cFA55261579483cd54e0d3` |
+| AsyncVault (template) | `0x73a464eA33549ac78B10A2Fa3Ab2E6f1B36FaDe2` |
+| VaultFactory | `0x9334dB9f4AE063b2C4FdEb40F2a63a7149d52C3c` |
 | YieldDistributor | `0xeE155a2DEeA1b4Fa4eEC51eA1b76343fd1BEA449` |
 | FeeEngine | `0xB9E9B4Ff39def237BEcDE33ff80289340cA75Eaa` |
 | NAVOracle | `0xd23Ad18c8Db21A79E48e18D8f1aF085999d57867` |
 | **DisputeResolver** *(v7.0)* | `0xB69308E970967b2D5073f2Ed3904A816De5cb2e6` |
 | **NAVScheduler** *(v7.0)* | `0xD3e9f677a20e1CF377a0f52E18bD8aecCd0A60aD` |
 | **RedemptionManager** *(v8.0)* | `0x6D728934aCA64f45B98fE4e07aF6Bbe1C8956F52` |
-| **LifecycleExitManager** *(v8.0)* | `0xC8af899eac24F755704a1ad287fCe62b77929a6c` |
+| **LifecycleExitManager** *(v8.0/v9.0)* | `0xC8af899eac24F755704a1ad287fCe62b77929a6c` |
+| **CarbonRetirementManager** *(v10.0)* | `Pending Local/Sepolia Deploy` |
 | Mock USDC | `0xf3f6f980917e9304D8dC9828A463BDf4b59239D4` |
 | Mock USDT | `0x855BeB487504596AAf75dE0Edc4EB70270FcB68A` |
 
@@ -1120,4 +1359,6 @@ function executeExit(address vault) external nonReentrant whenNotPaused {
 | v5.0.0 | — | Layer 4 marketplace (OrderBook, Settlement, ClearingHouse) |
 | v6.0.0 | 2026-06-25 | NAVOracle UUPS upgrade, FeeEngine v6, BOR integration, marketplace config |
 | v7.0.0 | 2026-06-30 | FineArtPlugin deployed & registered; DisputeResolver standalone proxy; NAVScheduler + Chainlink Automation interface; 4 asset class schedules on-chain; FeeEngine `getFeeDashboard()` view |
-| **v8.0.0** | **2026-07-07** | **Redemption Module implementation (v5.0 & v5.1 findings); Deployed standalone `RedemptionManager` and `LifecycleExitManager` proxies; Upgraded `AssetRegistry` and `Compliance` on Sepolia; Updated factory templates.** |
+| v8.0.0 | 2026-07-07 | Redemption Module implementation (v5.0 & v5.1 findings); Deployed standalone `RedemptionManager` and `LifecycleExitManager` proxies; Upgraded `AssetRegistry` and `Compliance` on Sepolia; Updated factory templates. |
+| v9.0.0 | 2026-07-09 | Beneficial Ownership Sync (BOR) through OwnershipSyncManager middleware; optimized registry states and removed transaction history lists on-chain; updated SyncVault and AsyncVault templates; updated VaultFactory to automatically set compliance modules on clones; upgraded LifecycleExitManager to take explicit investor list parameter; deployed and registered CarbonCreditPlugin. |
+| **v10.0.0** | **2026-07-16** | **Institutional Carbon Credit Extension: (1) Carbon archetype corrected to STATIC_HOLD; (2) DMSRegistry and CarbonAssetMetadataStore made optional; (3) Payout & deposit backend-orchestrated (no USDC in vaults); (4) NAV + PoR wired to SyncVault; (5) Serial range registered at tokenization, allocated FIFO on retirement; (6) Deployed CarbonRetirementManager and CarbonBatchManager.** |

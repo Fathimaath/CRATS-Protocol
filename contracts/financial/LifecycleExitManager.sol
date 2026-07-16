@@ -9,6 +9,9 @@ import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "../interfaces/asset/IAssetRegistry.sol";
 import "../interfaces/compliance/ICompliance.sol";
+import "../interfaces/financial/INAVOracle.sol";
+import "../interfaces/financial/IRedemptionManager.sol";
+import "../interfaces/financial/ITreasury.sol";
 
 interface IVault {
     function asset() external view returns (address);
@@ -17,6 +20,7 @@ interface IVault {
     function totalSupply() external view returns (uint256);
     function closeVault() external;
     function burnShares(address account, uint256 amount) external;
+    function assetId() external view returns (bytes32);
 }
 
 interface IAssetToken {
@@ -33,7 +37,6 @@ contract LifecycleExitManager is
 
     bytes32 public constant GUARDIAN_ROLE = keccak256("GUARDIAN_ROLE");
 
-    // L2 AssetRegistry
     IAssetRegistry public assetRegistry;
     IERC20 public usdc;
 
@@ -56,6 +59,14 @@ contract LifecycleExitManager is
 
     // vault => investor => amount
     mapping(address => mapping(address => uint256)) public escrowedSettlements;
+
+    // v10 Precondition State
+    address public navOracle;
+    address public redemptionManager;
+    address public governanceMultisig;
+    address public treasury;
+    address public ownershipSyncManager;
+    uint256 public settlementVarianceBPS; // e.g. 500 = 5%
 
     event SettlementVerified(address indexed vault, uint256 settlementAmount, uint256 timestamp);
     event ExitPaused(address indexed vault, uint256 timestamp);
@@ -82,6 +93,33 @@ contract LifecycleExitManager is
 
         usdc = IERC20(_usdc);
         assetRegistry = IAssetRegistry(_assetRegistry);
+        settlementVarianceBPS = 500; // default 5%
+    }
+
+    // === Setters for v10 features ===
+
+    function setNAVOracle(address _navOracle) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        navOracle = _navOracle;
+    }
+
+    function setRedemptionManager(address _redemptionManager) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        redemptionManager = _redemptionManager;
+    }
+
+    function setGovernanceMultisig(address _governanceMultisig) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        governanceMultisig = _governanceMultisig;
+    }
+
+    function setTreasury(address _treasury) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        treasury = _treasury;
+    }
+
+    function setOwnershipSyncManager(address _syncManager) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        ownershipSyncManager = _syncManager;
+    }
+
+    function setSettlementVarianceBPS(uint256 _bps) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        settlementVarianceBPS = _bps;
     }
 
     function verifySettlement(
@@ -91,6 +129,47 @@ contract LifecycleExitManager is
         require(vault != address(0), "LifecycleExitManager: invalid vault");
         require(settlementAmount > 0, "LifecycleExitManager: amount must be positive");
         require(vaultExits[vault].status == ExitStatus.NONE, "LifecycleExitManager: already initiated");
+
+        address assetToken = IVault(vault).asset();
+        require(assetRegistry.isVaultRegistered(assetToken, vault), "LifecycleExitManager: vault not registered");
+
+        // Precondition #5: Validate NAV variance
+        if (navOracle != address(0)) {
+            bytes32 assetId = IVault(vault).assetId();
+            if (assetId == bytes32(0)) {
+                assetId = bytes32(uint256(uint160(assetToken)));
+            }
+            uint256 navPerToken = INAVOracle(navOracle).getWeightedNAV(assetId);
+            uint256 totalSupply = IVault(vault).totalSupply();
+            uint256 expectedSettlement = (totalSupply * navPerToken) / 1e18;
+            uint256 diff = settlementAmount > expectedSettlement ? settlementAmount - expectedSettlement : expectedSettlement - settlementAmount;
+            require(diff * 10000 / expectedSettlement <= settlementVarianceBPS, "LifecycleExitManager: settlement variance exceeds limit");
+        }
+
+        // Precondition #6: No pending redemptions
+        if (redemptionManager != address(0)) {
+            require(IRedemptionManager(redemptionManager).getPendingRequestsCount(vault) == 0, "LifecycleExitManager: pending redemptions exist");
+            // Lock RedemptionManager from accepting new redemptions for this vault
+            IRedemptionManager(redemptionManager).lockVaultForExit(vault);
+        }
+
+        // Precondition #7: Governance approval
+        if (governanceMultisig != address(0)) {
+            bytes32 opHash = keccak256(abi.encodePacked(vault, settlementAmount));
+            // Verify that N-of-M signers have signed the operation
+            (bool success, bytes memory data) = governanceMultisig.staticcall(
+                abi.encodeWithSignature("hasApproval(bytes32)", opHash)
+            );
+            if (success) {
+                bool approved = abi.decode(data, (bool));
+                require(approved, "LifecycleExitManager: governance not approved");
+            }
+        }
+
+        // Precondition #8: Treasury settlement confirmed
+        if (treasury != address(0)) {
+            require(ITreasury(treasury).confirmSettlementAvailable(vault, settlementAmount), "LifecycleExitManager: treasury funds not confirmed");
+        }
 
         // Transfer settlement funds (USDC) from sender to this contract
         usdc.safeTransferFrom(msg.sender, address(this), settlementAmount);
@@ -133,6 +212,8 @@ contract LifecycleExitManager is
 
         address comp = IVault(vault).complianceModule();
 
+        uint256 processedShares = 0;
+
         for (uint256 i = 0; i < investors.length; i++) {
             address investor = investors[i];
             IAssetRegistry.BeneficialOwner memory record = assetRegistry.getBeneficialOwner(assetToken, vault, investor);
@@ -161,6 +242,22 @@ contract LifecycleExitManager is
 
             // Programmatically burn asset tokens from the vault (which holds the underlying RWA)
             IAssetToken(assetToken).burnFromExcludingAllowance(vault, shares);
+
+            processedShares += shares;
+        }
+
+        // Precondition #1: All investors paid (processed)
+        require(processedShares == totalShares, "LifecycleExitManager: not all investors processed");
+
+        // Precondition #2: All shares burned
+        require(IVault(vault).totalSupply() == 0, "LifecycleExitManager: shares not fully burned");
+
+        // Precondition #3: BOR synchronized
+        if (ownershipSyncManager != address(0)) {
+            (bool success, ) = ownershipSyncManager.call(
+                abi.encodeWithSignature("updateOnVaultClosure(address,address)", assetToken, vault)
+            );
+            require(success, "LifecycleExitManager: BOR sync failed");
         }
 
         // Close the vault

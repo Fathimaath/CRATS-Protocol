@@ -73,6 +73,9 @@ contract RedemptionManager is AccessControl, ReentrancyGuard {
     /// @dev Next request ID per vault
     mapping(address => uint256) public nextRequestId;
 
+    mapping(address => bool) public vaultExitLocked;
+    mapping(address => mapping(uint256 => bytes32)) public disbursementTxRefs;
+
     /// @dev Redemption gates: vault => gate config
     mapping(address => RedemptionGate) public redemptionGates;
 
@@ -227,6 +230,7 @@ contract RedemptionManager is AccessControl, ReentrancyGuard {
         uint256 shares
     ) external nonReentrant returns (uint256 requestId) {
         require(vault != address(0), "RedemptionManager: Invalid vault");
+        require(!vaultExitLocked[vault], "vault is in lifecycle exit");
         require(shares > 0, "RedemptionManager: Shares must be positive");
 
         address assetToken = address(0);
@@ -867,5 +871,22 @@ contract RedemptionManager is AccessControl, ReentrancyGuard {
         } else {
             return amount * (10 ** (toDecimals - fromDecimals));
         }
+    }
+
+    event RedemptionDisbursed(address indexed vault, uint256 indexed requestId, bytes32 txRef);
+
+    function lockVaultForExit(address vault) external onlyRole(PROCESSOR_ROLE) {
+        vaultExitLocked[vault] = true;
+    }
+
+    function markDisbursed(
+        address vault,
+        uint256 requestId,
+        bytes32 txRef
+    ) external onlyRole(PROCESSOR_ROLE) {
+        RedemptionRequest storage request = redemptionRequests[vault][requestId];
+        require(request.status == RedemptionStatus.CLAIMED, "RedemptionManager: Not claimed");
+        disbursementTxRefs[vault][requestId] = txRef;
+        emit RedemptionDisbursed(vault, requestId, txRef);
     }
 }

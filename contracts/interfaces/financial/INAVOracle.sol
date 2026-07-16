@@ -74,6 +74,7 @@ interface INAVOracle {
     function submitNAV(bytes32 assetId, uint256 assetValue, uint256 valuationDate, bytes32 documentHash, ValuationMethod method) external;
     function getWeightedNAV(bytes32 assetId) external view returns (uint256);
     function calculateNAV(bytes32 vaultId) external view returns (uint256 navPerShare, uint256 totalAssets, uint256 totalLiabilities, NAVState state);
+    function getNavForMintValidation(bytes32 assetId) external view returns (uint256);
     function getNAVState(bytes32 assetId) external view returns (NAVState);
     function getNAVStateWithWarning(bytes32 assetId) external view returns (NAVState state, bool shouldWarn);
     function assertDepositAllowed(bytes32 assetId) external view;

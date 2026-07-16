@@ -180,4 +180,7 @@ interface IRedemptionManager {
     function DEFAULT_PERIOD_DURATION() external view returns (uint256);
 
     function DEFAULT_CLAIM_PERIOD() external view returns (uint256);
+
+    function lockVaultForExit(address vault) external;
+    function markDisbursed(address vault, uint256 requestId, bytes32 txRef) external;
 }
