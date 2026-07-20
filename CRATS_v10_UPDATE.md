@@ -80,20 +80,20 @@ Tokenize Asset (L2) ──► List Vault (L3) ──► Invest (L3) ──► P2
 
 ---
 
-## 5. Deployed Contract Reference (Localhost)
+## 5. Deployed Contract Reference (Sepolia Network)
 
-Use the following addresses for local hardhat verification:
+Use the following addresses for Sepolia verification:
 
-| Contract | Purpose |
-|---|---|
-| `DMSRegistry` | Document compliance check (Optional) |
-| `CarbonCreditPlugin` | STATIC_HOLD validator plugin |
-| `CarbonRetirementPlugin` | CONSUMABLE validator plugin |
-| `CarbonBatchManager` | FIFO serial tracker |
-| `CarbonAssetMetadataStore` | Carbon facts registry store (Optional) |
-| `CarbonRetirementManager` | Burn coordinator |
-| `GovernanceMultisig` | Timelocked N-of-M multisig |
-| `SanctionsOracle` | Compliance blacklist registry |
+| Contract | Address | Purpose |
+|---|---|---|
+| `DMSRegistry` | `0x57dEBA4ac651FE6f1f19b005338E6eFda829869D` | Document compliance check (Optional) |
+| `CarbonCreditPlugin` | `0x8E97F22574b57F891b67575eA199012b5Ae59Bf2` | STATIC_HOLD validator plugin |
+| `CarbonRetirementPlugin` | `0x03Bca9A52a96182082cad4Fc19ED20e886Add346` | CONSUMABLE validator plugin |
+| `CarbonBatchManager` | `0xE3dE123E20429F5D9d6cEd8C6C167e844f060a09` | FIFO serial tracker |
+| `CarbonAssetMetadataStore` | `0xe15431397391d67CE9573c3D12315E547569a44b` | Carbon facts registry store (Optional) |
+| `CarbonRetirementManager` | `0x29f1a6b5052a3a1AF33d18De48a19Ebf17f541d8` | Burn coordinator & Registry Verification Manager (v10.1.0) |
+| `GovernanceMultisig` | `0x9F2CCD782AF98f1E212738F8cB68B76739d5a5D8` | Timelocked N-of-M multisig |
+| `SanctionsOracle` | `0x62514c01bC858938b16A1f419312aB28942d3b0C` | Compliance blacklist registry |
 
 ---
 
@@ -111,4 +111,86 @@ Use the following addresses for local hardhat verification:
 ### How to retire Carbon Credits?
 1. Submit a retirement request in the platform dashboard.
 2. Specify the beneficiary name and offset purpose.
-3. Wait for the registry confirmation. Once completed, your vault shares are burned and an official retirement certificate is issued to you.
+3. Track real-time registry status updates (Pending Registry, Automatic Retry, Compliance Review, Governance Review, Completed).
+4. Once completed, your vault shares are burned and an official retirement certificate is issued to you.
+
+---
+
+## 7. Registry Verification, Retry & Governance Policy (v10.1.0)
+
+To ensure operational transparency, regulatory compliance, and investor confidence, the protocol defines a formal retry, escalation, and governance framework for all external registry verification workflows (e.g., carbon registries, retirement registries, settlement registries).
+
+### 7.1 Automatic Retry & Escalation Policy
+When an external registry verification request cannot be completed due to temporary unavailability, network failures, or delayed responses, the platform automatically retries the verification process according to a predefined Service Level Agreement (SLA):
+- **Pending Verification State**: Transactions remain active in `PENDING_REGISTRY` during the retry window.
+- **Configured SLA Defaults**:
+  - `maxRetries`: 3 retries.
+  - `retryIntervalSeconds`: 8 hours.
+  - `maxWaitPeriodSeconds`: 24 hours (SLA deadline).
+  - `governanceBufferSeconds`: 72 hours.
+- **Auditability**: Each retry attempt is logged permanently on-chain in the retirement audit trail (`triggerRetry`).
+- **Compliance Escalation**: If verification remains unsuccessful after the retry limit or SLA deadline, the transaction is automatically/manually escalated to the Compliance Team (`escalateToCompliance`).
+
+### 7.2 Investor Status Visibility
+Registry verification is exposed through internal workflow states and user-facing transaction status strings via `getInvestorStatusString(uint256)`:
+1. `Pending Registry Confirmation`
+2. `Registry Verification in Progress`
+3. `Escalated to Compliance Review`
+4. `Under Governance Review`
+5. `Registry Verification Completed`
+6. `Registry Verification Failed` / `Cancelled by Governance`
+
+Each status includes:
+- Current processing stage
+- Expected resolution timeframe / SLA deadline (`slaDeadline`)
+- Full audit trail of timestamps and state transitions (`getAuditTrail`)
+- Notification of compliance / governance escalation
+
+### 7.3 Registry Delay & Escalation Workflow
+If an external registry fails to respond within the configured SLA:
+1. Automatic retry attempts are executed until `maxRetries` is reached.
+2. The transaction is escalated to Compliance (`COMPLIANCE_REVIEW`).
+3. If the delay continues beyond the maximum waiting period (`slaDeadline`), the case is escalated to the Governance Committee (`GOVERNANCE_REVIEW` via `escalateToGovernance`).
+
+### 7.4 Maximum Waiting Period & Governance Authority
+Once a transaction transitions to `GOVERNANCE_REVIEW`, Governance operates within a clearly defined on-chain mandate:
+- **`governanceExtendSLA`**: Extend the registry waiting period with a newly defined SLA deadline.
+- **`governanceContinueHold`**: Log an operational update note while awaiting registry response.
+- **`governanceCancel`**: Cancel/unwind the transaction where permitted, releasing reserved carbon credit batches back to the pool.
+- **`confirmRetirement`**: Complete verification upon receiving official off-chain confirmation.
+
+Governance cannot override or fabricate external registry confirmations. Any action taken preserves regulatory compliance and maintains underlying asset registry integrity.
+
+```
+Investor Request
+        │
+        ▼
+Pending Registry Verification (PENDING_REGISTRY)
+        │
+        ▼
+Automatic Retry (Configured SLA: 3 Retries / 8h Interval)
+        │
+        ├──────── Success ───────► Completed (CONFIRMED)
+        │
+        ▼
+Retry Limit Reached / SLA Deadline
+        │
+        ▼
+Compliance Review (COMPLIANCE_REVIEW)
+        │
+        ▼
+Registry Delay Exceeds Max Waiting Period
+        │
+        ▼
+Governance Review (GOVERNANCE_REVIEW)
+        │
+        ├── Extend Waiting Period (governanceExtendSLA)
+        ├── Manual Registry Coordination (governanceContinueHold)
+        ├── Continue Hold
+        ├── Escalate to Legal/Operations
+        └── Cancel/Unwind (governanceCancel - Releases Credits)
+        │
+        ▼
+Final Registry Resolution
+```
+

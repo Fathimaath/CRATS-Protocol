@@ -1314,16 +1314,19 @@ contract LifecycleExitManager is
 | AssetToken (template) | `0xD1aB6DAC41cC010aE4a6f858824a55BFDF59A70a` |
 | AssetFactory | `0xeCd44390e9fC54d6f25726b7076FA5F601695F05` |
 | AssetRegistry | `0xb103311FFe01849201E892d07E984ad2A17ED62f` |
-| **OwnershipSyncManager** *(v9.0)* | `0xAEA3f4E28c9F0122EB8eD2773b79c9743421D007` |
+| **OwnershipSyncManager** *(v9.0/v10.0)* | `0x096DdB2087c2a896bb5Fda93aC84131e08A91DF5` |
 | RealEstatePlugin | `0xC5c3c0916f02119ed16E70a5970FABA692D77496` |
 | **FineArtPlugin** *(v7.0)* | `0x84887FF77a17Fd17c350E60ADbd54a25Abf0d8be` |
-| **CarbonCreditPlugin** *(v10.0)* | `Pending Local/Sepolia Deploy` |
-| **CarbonRetirementPlugin** *(v10.0)* | `Pending Local/Sepolia Deploy` |
+| **CarbonCreditPlugin** *(v10.0)* | `0x8E97F22574b57F891b67575eA199012b5Ae59Bf2` |
+| **CarbonRetirementPlugin** *(v10.0)* | `0x03Bca9A52a96182082cad4Fc19ED20e886Add346` |
+| **CarbonBatchManager** *(v10.0)* | `0xE3dE123E20429F5D9d6cEd8C6C167e844f060a09` |
+| **CarbonAssetMetadataStore** *(v10.0)* | `0xe15431397391d67CE9573c3D12315E547569a44b` |
+| **DMSRegistry** *(v10.0)* | `0x57dEBA4ac651FE6f1f19b005338E6eFda829869D` |
 
 ### Layer 3 — Financial
 | Contract | Address |
 |---|---|
-| SyncVault (template) | `0x828129f4237CB12AE3cFA55261579483cd54e0d3` |
+| SyncVault (template) | `0x5c81f5772D63204d764650E8F4c7DE9491c52aB5` |
 | AsyncVault (template) | `0x73a464eA33549ac78B10A2Fa3Ab2E6f1B36FaDe2` |
 | VaultFactory | `0x9334dB9f4AE063b2C4FdEb40F2a63a7149d52C3c` |
 | YieldDistributor | `0xeE155a2DEeA1b4Fa4eEC51eA1b76343fd1BEA449` |
@@ -1333,7 +1336,9 @@ contract LifecycleExitManager is
 | **NAVScheduler** *(v7.0)* | `0xD3e9f677a20e1CF377a0f52E18bD8aecCd0A60aD` |
 | **RedemptionManager** *(v8.0)* | `0x6D728934aCA64f45B98fE4e07aF6Bbe1C8956F52` |
 | **LifecycleExitManager** *(v8.0/v9.0)* | `0xC8af899eac24F755704a1ad287fCe62b77929a6c` |
-| **CarbonRetirementManager** *(v10.0)* | `Pending Local/Sepolia Deploy` |
+| **CarbonRetirementManager** *(v10.1.0)* | `0x29f1a6b5052a3a1AF33d18De48a19Ebf17f541d8` |
+| GovernanceMultisig | `0x9F2CCD782AF98f1E212738F8cB68B76739d5a5D8` |
+| SanctionsOracle | `0x62514c01bC858938b16A1f419312aB28942d3b0C` |
 | Mock USDC | `0xf3f6f980917e9304D8dC9828A463BDf4b59239D4` |
 | Mock USDT | `0x855BeB487504596AAf75dE0Edc4EB70270FcB68A` |
 
@@ -1361,4 +1366,6 @@ contract LifecycleExitManager is
 | v7.0.0 | 2026-06-30 | FineArtPlugin deployed & registered; DisputeResolver standalone proxy; NAVScheduler + Chainlink Automation interface; 4 asset class schedules on-chain; FeeEngine `getFeeDashboard()` view |
 | v8.0.0 | 2026-07-07 | Redemption Module implementation (v5.0 & v5.1 findings); Deployed standalone `RedemptionManager` and `LifecycleExitManager` proxies; Upgraded `AssetRegistry` and `Compliance` on Sepolia; Updated factory templates. |
 | v9.0.0 | 2026-07-09 | Beneficial Ownership Sync (BOR) through OwnershipSyncManager middleware; optimized registry states and removed transaction history lists on-chain; updated SyncVault and AsyncVault templates; updated VaultFactory to automatically set compliance modules on clones; upgraded LifecycleExitManager to take explicit investor list parameter; deployed and registered CarbonCreditPlugin. |
-| **v10.0.0** | **2026-07-16** | **Institutional Carbon Credit Extension: (1) Carbon archetype corrected to STATIC_HOLD; (2) DMSRegistry and CarbonAssetMetadataStore made optional; (3) Payout & deposit backend-orchestrated (no USDC in vaults); (4) NAV + PoR wired to SyncVault; (5) Serial range registered at tokenization, allocated FIFO on retirement; (6) Deployed CarbonRetirementManager and CarbonBatchManager.** |
+| v10.0.0 | 2026-07-16 | Institutional Carbon Credit Extension: (1) Carbon archetype corrected to STATIC_HOLD; (2) DMSRegistry and CarbonAssetMetadataStore made optional; (3) Payout & deposit backend-orchestrated (no USDC in vaults); (4) NAV + PoR wired to SyncVault; (5) Serial range registered at tokenization, allocated FIFO on retirement; (6) Deployed CarbonRetirementManager and CarbonBatchManager on Sepolia. |
+| **v10.1.0** | **2026-07-20** | **Registry Verification, Retry & Governance Policy Extension: (1) Extended `CarbonRetirementManager` with 6 investor-visible statuses (`PENDING_REGISTRY`, `COMPLIANCE_REVIEW`, `GOVERNANCE_REVIEW`, `CONFIRMED`, `FAILED`, `CANCELLED`); (2) Integrated configurable automatic retries (`maxRetries`: 3, `retryInterval`: 8h); (3) Added SLA enforcement (`maxWaitPeriod`: 24h) with automated compliance & governance escalation; (4) Added Governance mandate hooks (`governanceExtendSLA`, `governanceContinueHold`, `governanceCancel` with credit release); (5) On-chain audit trail logging per retirement; (6) Deployed upgraded `CarbonRetirementManager` to Ethereum Sepolia at `0x29f1a6b5052a3a1AF33d18De48a19Ebf17f541d8`.** |
+

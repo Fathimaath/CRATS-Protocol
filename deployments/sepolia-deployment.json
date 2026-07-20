@@ -2,7 +2,7 @@
   "network": "sepolia",
   "chainId": "11155111",
   "deployer": "0x5537dbc19eeE936A615B151c8C5983FBF735C583",
-  "timestamp": "2026-07-16T19:39:15.753Z",
+  "timestamp": "2026-07-20T16:03:44.517Z",
   "contracts": {
     "kycRegistry": "0xb4C0CD81eA49Dc4AC94472004955C7EE9f99Dc5c",
     "identitySBT": "0x5e88d8a83dE2F46F6809BaA06299f5113f3607A7",
@@ -49,7 +49,7 @@
     "carbonRetirementPlugin": "0x03Bca9A52a96182082cad4Fc19ED20e886Add346",
     "carbonBatchManager": "0xE3dE123E20429F5D9d6cEd8C6C167e844f060a09",
     "carbonMetadataStore": "0xe15431397391d67CE9573c3D12315E547569a44b",
-    "carbonRetirementManager": "0xCfF47b1eCEc9d7CEA9F1baEb17fd99cdb16A4193",
+    "carbonRetirementManager": "0x29f1a6b5052a3a1AF33d18De48a19Ebf17f541d8",
     "governanceMultisig": "0x9F2CCD782AF98f1E212738F8cB68B76739d5a5D8"
   }
 }
