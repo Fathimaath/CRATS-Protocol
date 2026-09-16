@@ -38,6 +38,7 @@ interface IIdentitySBT {
         uint64 expiresAt;
         uint64 updatedAt;
         bool isFrozen;
+        string holderName;    // Human-readable handle/display name
     }
     
     // === ERC-5192 Events ===
@@ -65,6 +66,16 @@ interface IIdentitySBT {
         bytes32 didHash,
         string calldata did,
         uint64 expiresAt
+    ) external returns (uint256 tokenId);
+
+    function registerIdentityWithHolderName(
+        address primaryWallet,
+        uint8 role,
+        uint16 jurisdiction,
+        bytes32 didHash,
+        string calldata did,
+        uint64 expiresAt,
+        string calldata holderName
     ) external returns (uint256 tokenId);
     
     function addChainAddress(uint256 tokenId, uint256 chainId, address wallet) external;

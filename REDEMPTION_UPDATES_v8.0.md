@@ -8,7 +8,7 @@ This document provides the complete, production-grade specification for the new 
 
 ### 1.1 Standard Exits (`RedemptionManager`)
 Provides immediate and asynchronous queue-based exits for compliance-onboarded investors:
-*   **Synchronous Settlement (SyncVault)**: Vaults execute immediate exits by calling ERC-4626 `redeem` or `withdraw`. The vault burns the shares and returns the underlying asset tokens atomically, subject to active identity registry whitelists.
+*   **Synchronous Settlement (SyncVault)**: Vaults execute immediate exits by calling ERC-4626 `redeem` or `withdraw`. The vault burns the shares and returns the underlying asset tokens atomically, subject to active identity registry whitelists.3
 *   **Asynchronous Settlement (AsyncVault / EIP-7540)**: For illiquid real-world assets, redemptions use a multi-stage request pipeline:
     1.  **Request**: Investor locks their shares in the vault contract and pays the stablecoin (USDC) exit fee. The request is created in the `PENDING` state.
     2.  **Processing**: Operators verify property liquid reserves, calculate the final asset settlement amount, and mark the request `READY`.
@@ -323,3 +323,87 @@ The v8.0.0 components are active on the Ethereum Sepolia network at these addres
 *   **AsyncVault Template**: `0x14CCb54eCD80a1C13E3B4757F82f7e5D2b0E3E1F`
 *   **RedemptionManager**: `0x6D728934aCA64f45B98fE4e07aF6Bbe1C8956F52`
 *   **LifecycleExitManager**: `0xC8af899eac24F755704a1ad287fCe62b77929a6c`
+
+---
+
+## 6. Audit Patch (September 2026) — v8.1.0
+
+> [!IMPORTANT]
+> The following changes were applied to `RedemptionManager.sol`, `CarbonRetirementManager.sol`, and `IRedemptionManager.sol` following the CopyM internal security and compliance audit. All changes compile cleanly (149 contracts, 0 errors, evm target: cancun).
+
+### 6.1 Q1 (HIGH) — BOR Sync After `claimRedemption` Share Burn
+
+**Problem:** `vault.burnShares()` was called in `claimRedemption` but `ownershipSyncManager.updateBeneficialOwnership()` was never invoked. The Beneficial Ownership Register (BOR) stayed stale, showing shares the investor no longer held.
+
+**Fix applied to** [`RedemptionManager.sol`](file:///c:/Users/anask/Desktop/CPM/CRATS-EVM/contracts/financial/RedemptionManager.sol):
+- Added `address public ownershipSyncManager` state variable + `setOwnershipSyncManager(address)` admin setter.
+- After `burnShares` in `claimRedemption`, resolves the sync manager (with vault-level fallback) and calls `IOwnershipSync.updateBeneficialOwnership(assetToken, vault, investor, newBalance)` in a `try/catch`.
+
+### 6.2 Q2 (HIGH) — Recovery Path for Expired READY Redemptions
+
+**Problem:** Once a request reached `READY` and the 30-day claim window elapsed, no function could cancel it — shares and fees were permanently locked in the `RedemptionManager` contract.
+
+**Fix applied to** [`RedemptionManager.sol`](file:///c:/Users/anask/Desktop/CPM/CRATS-EVM/contracts/financial/RedemptionManager.sol):
+- **`governanceCancelRequest`** now accepts `READY` requests where `block.timestamp > settleTime + DEFAULT_CLAIM_PERIOD`. Returns shares + fee to the investor.
+- **New `governanceReleaseExpiredToVault(address vault, uint256 requestId)`** — for cases where the investor was already paid off-chain (Treasury). Burns or transfers escrowed shares to the vault; marks request as `EXPIRED`.
+- Added `RedemptionStatus.EXPIRED` enum value.
+- Added `RedemptionExpired(vault, requestId, investor)` event.
+
+**Decision guide:**
+
+| Situation | Function to call |
+|-----------|-----------------|
+| Investor was NOT paid; return assets | `governanceCancelRequest` |
+| Investor was already paid off-chain | `governanceReleaseExpiredToVault` |
+
+### 6.3 Q3 (MEDIUM) — NAV Variance Enforcement & USDC Payout Fix
+
+**Problem:** `processRedemption` accepted arbitrary asset amounts without NAV validation. `claimRedemption` contained an invalid `IERC20(vault).safeTransfer()` call (runtime revert) and would have transferred vault share tokens instead of USDC.
+
+**Fix applied to** [`RedemptionManager.sol`](file:///c:/Users/anask/Desktop/CPM/CRATS-EVM/contracts/financial/RedemptionManager.sol):
+- Added `address public navOracle` + `uint256 public settlementVarianceBPS = 500` (5% default).
+- Added `setNavOracle(address)` and `setSettlementVarianceBPS(uint256)` admin setters.
+- Added `getWeightedNAV(address vault) public view returns (uint256)` — resolves assetId from vault and queries `INAVOracle.getWeightedNAV(assetId)`.
+- In `processRedemption` and `processBatchRedemptions`: when `assets > 0`, enforces `|diff| * 10000 / expected ≤ settlementVarianceBPS`. `assets == 0` bypasses check (CopyM Treasury off-chain mode).
+- **Fixed `claimRedemption` payout**: Resolves `FeeEngine.usdc()` as the USDC/USDT payout token and calls `SafeERC20.safeTransfer` correctly. Vault token transfer is a test-only fallback.
+
+**CopyM dual settlement modes:**
+
+| Mode | `assets` value | RM behaviour |
+|------|---------------|--------------|
+| Treasury Payout (primary) | `0` | Burns shares, syncs BOR, sweeps fee — no RM transfer |
+| On-chain Payout (optional) | `> 0` | Transfers USDC to investor from RM balance |
+
+### 6.4 Q4 (LOW / Hardening) — KYC Gate in `CarbonRetirementManager.requestRetirement`
+
+**Problem:** Any address holding vault shares could call `requestRetirement` without KYC verification. A previously-verified investor whose KYC expired could still retire credits.
+
+**Fix applied to** [`CarbonRetirementManager.sol`](file:///c:/Users/anask/Desktop/CPM/CRATS-EVM/contracts/financial/CarbonRetirementManager.sol):
+- Added `address public identityRegistry` (mutable, defaults to `address(0)` — open access).
+- Added `setIdentityRegistry(address)` admin setter (pass `address(0)` to disable).
+- In `requestRetirement`: if `identityRegistry != address(0)`, enforces `isVerified(msg.sender)` AND `!isFrozen(msg.sender)`.
+
+### 6.5 Interface Update
+
+[`IRedemptionManager.sol`](file:///c:/Users/anask/Desktop/CPM/CRATS-EVM/contracts/interfaces/financial/IRedemptionManager.sol) updated with all new events, setters, governance functions, and view methods from Q1–Q3.
+
+### 6.6 Backward Compatibility
+
+All new features are **opt-in and default to disabled** (`address(0)`):
+- No existing deployments break.
+- No existing unit tests need modification.
+- New functionality activates only when admin calls the respective setter.
+
+### 6.7 Post-Deployment Configuration
+
+```solidity
+// Q1 — BOR sync (required for regulatory-grade cap table accuracy)
+redemptionManager.setOwnershipSyncManager(ownershipSyncManagerAddress);
+
+// Q3 — NAV variance (optional; omit for pure Treasury-payout mode)
+redemptionManager.setNavOracle(navOracleAddress);
+redemptionManager.setSettlementVarianceBPS(500); // 5%
+
+// Q4 — KYC gate for carbon retirements (optional)
+carbonRetirementManager.setIdentityRegistry(identityRegistryAddress);
+```

@@ -4,8 +4,14 @@ pragma solidity ^0.8.25;
 /**
  * @title IRedemptionManager
  * @dev Interface for RedemptionManager contract
+ *
+ * Audit additions (copym audit):
+ *  Q1 — setOwnershipSyncManager / OwnershipSyncManagerUpdated
+ *  Q2 — governanceCancelRequest (now accepts expired READY), governanceReleaseExpiredToVault
+ *  Q3 — setNavOracle, setSettlementVarianceBPS, getWeightedNAV
  */
 interface IRedemptionManager {
+
     // ========== Events ==========
 
     event RedemptionRequested(
@@ -48,6 +54,16 @@ interface IRedemptionManager {
         uint256 gatePercentage,
         uint256 periodDuration
     );
+
+    /// @dev Q1 — emitted when ownershipSyncManager is configured
+    event OwnershipSyncManagerUpdated(address indexed syncManager);
+
+    /// @dev Q2 — emitted when an expired READY request is released to the vault
+    event RedemptionExpired(address indexed vault, uint256 indexed requestId, address indexed investor);
+
+    /// @dev Q3 — emitted when navOracle or varianceBPS is updated
+    event NavOracleUpdated(address indexed oracle);
+    event SettlementVarianceUpdated(uint256 varianceBPS);
 
     // ========== Redemption Request Flow ==========
 
@@ -106,6 +122,18 @@ interface IRedemptionManager {
 
     function disableRedemptionGate(address vault) external;
 
+    // ========== Governance Controls (Q2) ==========
+
+    function freezeRequest(address vault, uint256 requestId) external;
+
+    /// @dev Cancel a PENDING, FROZEN, or expired-READY request; returns shares + fee to investor
+    function governanceCancelRequest(address vault, uint256 requestId) external;
+
+    /// @dev For off-chain Treasury settlements: burns/releases escrowed shares to vault, marks EXPIRED
+    function governanceReleaseExpiredToVault(address vault, uint256 requestId) external;
+
+    function cancelFrozenRequest(address vault, uint256 requestId) external;
+
     // ========== View Functions ==========
 
     function getRedemptionRequest(address vault, uint256 requestId)
@@ -161,25 +189,38 @@ interface IRedemptionManager {
             bool active
         );
 
+    /// @dev Q3 — returns NAV per share (1e18-scaled) for a vault using the configured oracle
+    function getWeightedNAV(address vault) external view returns (uint256);
+
     // ========== Configuration ==========
 
     function setVaultRegistry(address registry) external;
-
     function setIdentityRegistry(address registry) external;
+    function setAssetRegistry(address registry) external;
+
+    /// @dev Q1 — set ownership sync manager for BOR updates after redemption
+    function setOwnershipSyncManager(address syncManager) external;
+
+    /// @dev Q3 — configure the NAV oracle and settlement variance tolerance
+    function setNavOracle(address oracle) external;
+    function setSettlementVarianceBPS(uint256 bps) external;
+
+    // ========== State Readers ==========
 
     function vaultRegistry() external view returns (address);
-
     function identityRegistry() external view returns (address);
+    function ownershipSyncManager() external view returns (address);
+    function navOracle() external view returns (address);
+    function settlementVarianceBPS() external view returns (uint256);
 
     // ========== Constants ==========
 
     function BASIS_POINTS() external view returns (uint256);
-
     function DEFAULT_GATE_PERCENTAGE() external view returns (uint256);
-
     function DEFAULT_PERIOD_DURATION() external view returns (uint256);
-
     function DEFAULT_CLAIM_PERIOD() external view returns (uint256);
+
+    // ========== Exit Management ==========
 
     function lockVaultForExit(address vault) external;
     function markDisbursed(address vault, uint256 requestId, bytes32 txRef) external;

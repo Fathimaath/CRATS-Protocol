@@ -6,6 +6,7 @@ import "../interfaces/carbon/ICarbonRetirementManager.sol";
 import "../asset/carbon/CarbonBatchManager.sol";
 import "../asset/carbon/CarbonAssetMetadataStore.sol";
 import "../interfaces/asset/IOwnershipSync.sol";
+import "../interfaces/identity/IIdentityRegistry.sol";
 import "@openzeppelin/contracts/access/AccessControl.sol";
 
 interface IVault {
@@ -44,6 +45,12 @@ contract CarbonRetirementManager is ICarbonRetirementManager, AccessControl {
     CarbonBatchManager       public immutable batchManager;
     CarbonAssetMetadataStore public immutable metadataStore; // optional (can be address(0))
     address                  public immutable ownershipSyncManager;
+
+    // ─── Mutable Registry (admin-adjustable) ────────────────────────────────
+    /// @dev Layer 1 Identity Registry — if non-zero, investors must be KYC-verified
+    address public identityRegistry;
+
+    event IdentityRegistryUpdated(address indexed registry);
 
     // ─── SLA Configuration (admin-adjustable) ───────────────────────────────
     uint8   public defaultMaxRetries             = 3;
@@ -102,6 +109,16 @@ contract CarbonRetirementManager is ICarbonRetirementManager, AccessControl {
         ownershipSyncManager = _ownershipSyncManager;
     }
 
+    // ─── Admin: Identity Registry ─────────────────────────────────────────
+    /**
+     * @dev Set the Layer 1 Identity Registry used for KYC-gating retirements.
+     *      Pass address(0) to disable the gate (open access).
+     */
+    function setIdentityRegistry(address _registry) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        identityRegistry = _registry;
+        emit IdentityRegistryUpdated(_registry);
+    }
+
     // ─── Admin: SLA Config ────────────────────────────────────────────────
     function setSLAConfig(
         uint8   _maxRetries,
@@ -155,6 +172,19 @@ contract CarbonRetirementManager is ICarbonRetirementManager, AccessControl {
         string calldata retirementPurpose
     ) external override returns (uint256 retirementId) {
         require(shares > 0, "Retirement: zero shares");
+
+        // Q4: KYC / identity verification gate
+        if (identityRegistry != address(0)) {
+            require(
+                IIdentityRegistry(identityRegistry).isVerified(msg.sender),
+                "Retirement: investor not KYC-verified"
+            );
+            require(
+                !IIdentityRegistry(identityRegistry).isFrozen(msg.sender),
+                "Retirement: investor account is frozen"
+            );
+        }
+
         IVault v = IVault(vault);
         require(v.balanceOf(msg.sender) >= shares, "Retirement: insufficient shares balance");
 

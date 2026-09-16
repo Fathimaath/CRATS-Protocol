@@ -37,6 +37,15 @@ contract IdentitySBT is
     // Roles
     bytes32 public constant IDENTITY_MANAGER_ROLE = keccak256("IDENTITY_MANAGER_ROLE");
 
+    event IdentityProfileRegistered(
+        uint256 indexed tokenId,
+        address indexed primaryWallet,
+        string holderName,
+        string did,
+        uint8 role,
+        uint16 jurisdiction
+    );
+
     /// @custom:oz-upgrades-unsafe-allow constructor
     constructor() {
         _disableInitializers();
@@ -98,6 +107,30 @@ contract IdentitySBT is
         string calldata did,
         uint64 expiresAt
     ) external override onlyRole(IDENTITY_MANAGER_ROLE) returns (uint256) {
+        return _registerIdentity(primaryWallet, role, jurisdiction, didHash, did, expiresAt, "");
+    }
+
+    function registerIdentityWithHolderName(
+        address primaryWallet,
+        uint8 role,
+        uint16 jurisdiction,
+        bytes32 didHash,
+        string calldata did,
+        uint64 expiresAt,
+        string calldata holderName
+    ) external override onlyRole(IDENTITY_MANAGER_ROLE) returns (uint256) {
+        return _registerIdentity(primaryWallet, role, jurisdiction, didHash, did, expiresAt, holderName);
+    }
+
+    function _registerIdentity(
+        address primaryWallet,
+        uint8 role,
+        uint16 jurisdiction,
+        bytes32 didHash,
+        string memory did,
+        uint64 expiresAt,
+        string memory holderName
+    ) internal returns (uint256) {
         require(primaryWallet != address(0), "IdentitySBT: zero primary wallet");
         require(_walletToTokenId[primaryWallet] == 0, "IdentitySBT: wallet already has identity");
 
@@ -107,6 +140,7 @@ contract IdentitySBT is
         IdentityData storage id = _identities[tokenId];
         id.didHash = didHash;
         id.did = did;
+        id.holderName = holderName;
         id.role = role;
         id.status = CRATSConfig.STATUS_VERIFIED;
         id.jurisdiction = jurisdiction;
@@ -126,6 +160,7 @@ contract IdentitySBT is
         _walletToTokenId[primaryWallet] = tokenId;
 
         emit IdentityMinted(tokenId, primaryWallet, role, jurisdiction);
+        emit IdentityProfileRegistered(tokenId, primaryWallet, holderName, did, role, jurisdiction);
         emit StatusChanged(tokenId, CRATSConfig.STATUS_VERIFIED);
         emit Locked(tokenId); // ERC-5192 enforcement
 

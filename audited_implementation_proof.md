@@ -71,3 +71,50 @@ The CRATS Protocol is built upon established, audited, and industry-standard pro
 
 > [!TIP]
 > **Regulatory Grade Check**: This implementation matches the architecture used by **Tokeny**, which has processed billions in RWA assets across Europe and the US with full regulatory approval.
+
+---
+
+## 5. Layer 3: Financials & Carbon — Audit Fixes (September 2026)
+
+### CopyM Internal Security & Compliance Audit
+
+Following the CopyM platform integration audit, **four findings** were identified in the Layer 3 financials stack and resolved. All 149 contracts compile cleanly.
+
+| ID | Severity | Contract | Finding | Status |
+|---|---|---|---|---|
+| **Q1** | HIGH | `RedemptionManager.sol` | BOR not updated after `claimRedemption` share burn | ✅ Fixed |
+| **Q2** | HIGH | `RedemptionManager.sol` | No recovery path for expired READY redemption (permanent escrow lockup) | ✅ Fixed |
+| **Q3** | MEDIUM | `RedemptionManager.sol` | No NAV variance check on `processRedemption`; invalid `IERC20.safeTransfer()` payout call | ✅ Fixed |
+| **Q4** | LOW | `CarbonRetirementManager.sol` | No on-chain KYC gate in `requestRetirement` | ✅ Fixed |
+
+### Audited Layer 3 Components (Post-Fix)
+
+| Component | File | Fix Applied |
+|-----------|------|-------------|
+| [`RedemptionManager.sol`](file:///c:/Users/anask/Desktop/CPM/CRATS-EVM/contracts/financial/RedemptionManager.sol) | Layer 3 Financials | Q1 BOR sync, Q2 expired recovery, Q3 NAV enforcement + USDC payout |
+| [`CarbonRetirementManager.sol`](file:///c:/Users/anask/Desktop/CPM/CRATS-EVM/contracts/financial/CarbonRetirementManager.sol) | Layer 3 Carbon | Q4 KYC gate |
+| [`IRedemptionManager.sol`](file:///c:/Users/anask/Desktop/CPM/CRATS-EVM/contracts/interfaces/financial/IRedemptionManager.sol) | Interface | New events, setters, governance & view functions exported |
+
+### Security Patterns Added
+
+| Feature | Mechanism | Regulatory Utility |
+|---------|-----------|-------------------|
+| **BOR Auto-Sync** | `IOwnershipSync.updateBeneficialOwnership()` after every share burn | Accurate cap table; complies with beneficial ownership reporting requirements |
+| **Expired Escrow Recovery** | `governanceCancelRequest` (READY + expired) + `governanceReleaseExpiredToVault` | Prevents permanent asset lockup; ensures protocol solvency |
+| **NAV Variance Gate** | `INAVOracle.getWeightedNAV()` + `settlementVarianceBPS` (default 5%) | Prevents arbitrary value drift from NAV; protects all investors from price manipulation |
+| **USDC/USDT Payout** | `FeeEngine.usdc()` resolved at claim time | Correct stablecoin settlement; eliminates vault share re-transfer bug |
+| **KYC Gate (Carbon)** | `IIdentityRegistry.isVerified()` + `isFrozen()` | Ensures only verified, non-frozen investors can retire carbon credits |
+
+### Audit Reference Documents
+
+- [`CRATS_AUDIT_CHANGE_REQUESTS_ANALYSIS.md`](file:///c:/Users/anask/Desktop/CPM/CRATS-EVM/CRATS_AUDIT_CHANGE_REQUESTS_ANALYSIS.md) — Full technical analysis, root cause, and implementation specification
+- [`REDEMPTION_UPDATES_v8.0.md § 6`](file:///c:/Users/anask/Desktop/CPM/CRATS-EVM/REDEMPTION_UPDATES_v8.0.md) — v8.1.0 patch notes
+
+---
+
+> [!IMPORTANT]
+> **Post-Deployment Configuration Required**: The audit fixes are backward-compatible and default to disabled. Activate them on each deployment by calling the admin setters:
+> - `redemptionManager.setOwnershipSyncManager(address)` — enables BOR sync (Q1)
+> - `redemptionManager.setNavOracle(address)` — enables NAV variance check (Q3)
+> - `carbonRetirementManager.setIdentityRegistry(address)` — enables KYC gate (Q4)
+

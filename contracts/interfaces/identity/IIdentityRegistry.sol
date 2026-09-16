@@ -55,6 +55,17 @@ interface IIdentityRegistry {
         uint16 jurisdiction,
         bool isAccredited
     ) external returns (uint256 tokenId);
+
+    function registerIdentityWithHolderName(
+        address wallet,
+        bytes32 didHash,
+        string memory did,
+        IIdentitySBT.ChainAddress[] memory chainAddresses,
+        uint8 role,
+        uint16 jurisdiction,
+        bool isAccredited,
+        string memory holderName
+    ) external returns (uint256 tokenId);
     
     function addChainAddress(
         address wallet,

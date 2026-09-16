@@ -35,6 +35,14 @@ contract IdentityRegistry is
         uint8 role,
         uint16 jurisdiction
     );
+    event IdentityProfileRegistered(
+        address indexed wallet,
+        uint256 indexed tokenId,
+        string holderName,
+        string did,
+        uint8 role,
+        uint16 jurisdiction
+    );
     event IdentityUpdated(address indexed wallet, uint256 indexed tokenId);
 
     /// @custom:oz-upgrades-unsafe-allow constructor
@@ -88,19 +96,45 @@ contract IdentityRegistry is
         string calldata did,
         uint64 expiresAt
     ) external onlyRole(CRATSConfig.KYC_PROVIDER_ROLE) returns (uint256) {
+        return _registerIdentity(primaryWallet, role, jurisdiction, didHash, did, expiresAt, "");
+    }
+
+    function registerIdentityWithHolderName(
+        address primaryWallet,
+        uint8 role,
+        uint16 jurisdiction,
+        bytes32 didHash,
+        string calldata did,
+        uint64 expiresAt,
+        string calldata holderName
+    ) external onlyRole(CRATSConfig.KYC_PROVIDER_ROLE) returns (uint256) {
+        return _registerIdentity(primaryWallet, role, jurisdiction, didHash, did, expiresAt, holderName);
+    }
+
+    function _registerIdentity(
+        address primaryWallet,
+        uint8 role,
+        uint16 jurisdiction,
+        bytes32 didHash,
+        string memory did,
+        uint64 expiresAt,
+        string memory holderName
+    ) internal returns (uint256) {
         // Cross-check with KYC provider registry if needed
         require(kycProvidersRegistry.isProviderApproved(msg.sender), "IdentityRegistry: unauthorized provider");
 
-        uint256 tokenId = identitySBT.registerIdentity(
+        uint256 tokenId = identitySBT.registerIdentityWithHolderName(
             primaryWallet,
             role,
             jurisdiction,
             didHash,
             did,
-            expiresAt
+            expiresAt,
+            holderName
         );
 
         emit IdentityRegistered(primaryWallet, tokenId, role, jurisdiction);
+        emit IdentityProfileRegistered(primaryWallet, tokenId, holderName, did, role, jurisdiction);
         return tokenId;
     }
 

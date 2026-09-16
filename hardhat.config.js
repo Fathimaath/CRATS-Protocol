@@ -18,7 +18,10 @@ module.exports = {
   networks: {
     hardhat: {
       chainId: 31337,
-      allowUnlimitedContractSize: true
+      allowUnlimitedContractSize: true,
+      forking: {
+        url: "https://eth-sepolia.g.alchemy.com/v2/VTeMMA4sM53K8_OZAqXpkjlf3MpbAakK",
+      }
     },
     sepolia: {
       url: process.env.SEPOLIA_URL || "https://rpc.sepolia.org",
