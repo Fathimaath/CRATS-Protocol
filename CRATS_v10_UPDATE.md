@@ -91,7 +91,7 @@ Use the following addresses for Sepolia verification:
 | `CarbonRetirementPlugin` | `0x03Bca9A52a96182082cad4Fc19ED20e886Add346` | CONSUMABLE validator plugin |
 | `CarbonBatchManager` | `0xE3dE123E20429F5D9d6cEd8C6C167e844f060a09` | FIFO serial tracker |
 | `CarbonAssetMetadataStore` | `0xe15431397391d67CE9573c3D12315E547569a44b` | Carbon facts registry store (Optional) |
-| `CarbonRetirementManager` | `0x29f1a6b5052a3a1AF33d18De48a19Ebf17f541d8` | Burn coordinator & Registry Verification Manager (v10.1.0) |
+| `CarbonRetirementManager` | `0x096b9238ad38cC62D75542fD8b273278dff85AaB` | Burn coordinator & Registry Verification Manager (v10.1.0, KYC gate audit-fix 2026-09-16) |
 | `GovernanceMultisig` | `0x9F2CCD782AF98f1E212738F8cB68B76739d5a5D8` | Timelocked N-of-M multisig |
 | `SanctionsOracle` | `0x62514c01bC858938b16A1f419312aB28942d3b0C` | Compliance blacklist registry |
 

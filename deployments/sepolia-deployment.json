@@ -2,7 +2,7 @@
   "network": "sepolia",
   "chainId": "11155111",
   "deployer": "0x5537dbc19eeE936A615B151c8C5983FBF735C583",
-  "timestamp": "2026-09-16T10:17:09.550Z",
+  "timestamp": "2026-09-21T13:44:38.264Z",
   "contracts": {
     "kycRegistry": "0xb4C0CD81eA49Dc4AC94472004955C7EE9f99Dc5c",
     "identitySBT": "0x5e88d8a83dE2F46F6809BaA06299f5113f3607A7",
@@ -41,7 +41,7 @@
     "schedulerAdminGranted": true,
     "navSchedulesInitialized": true,
     "asyncVaultTemplate": "0x73a464eA33549ac78B10A2Fa3Ab2E6f1B36FaDe2",
-    "redemptionManager": "0xAA31e09508Dc42cd3227b0049F99Dca43a65ee12",
+    "redemptionManager": "0x48D9b40eD1FAF5bcc9EeB4E9bFAcD7c9F17E51Fa",
     "lifecycleExitManager": "0xC8af899eac24F755704a1ad287fCe62b77929a6c",
     "syncManager": "0x096DdB2087c2a896bb5Fda93aC84131e08A91DF5",
     "carbonCreditPlugin": "0x8E97F22574b57F891b67575eA199012b5Ae59Bf2",

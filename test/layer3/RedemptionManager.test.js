@@ -884,4 +884,86 @@ describe("Layer 3 - RedemptionManager", function () {
       expect(pendingCount).to.equal(3);
     });
   });
+
+  describe("governanceReleaseExpiredToVault", function () {
+    it("Should release expired READY redemption request to vault and sweep fee", async function () {
+      const vaultAddr = await mockVault.getAddress();
+      
+      // 1. Request redemption
+      await mockVault.connect(investor1).approve(await redemptionManager.getAddress(), REDEEM_AMOUNT);
+      const tx = await redemptionManager.connect(investor1).requestRedemption(vaultAddr, REDEEM_AMOUNT);
+      const receipt = await tx.wait();
+      const requestLog = receipt.logs.find(log => {
+        try {
+          return redemptionManager.interface.parseLog(log).name === "RedemptionRequested";
+        } catch {
+          return false;
+        }
+      });
+      const parsedLog = redemptionManager.interface.parseLog(requestLog);
+      const requestId = parsedLog.args.requestId;
+
+      // 2. Process redemption to READY
+      await redemptionManager.connect(processor).processRedemption(vaultAddr, requestId, REDEEM_AMOUNT);
+
+      let req = await redemptionManager.redemptionRequests(vaultAddr, requestId);
+      expect(req.status).to.equal(RedemptionStatus.READY);
+
+      // 3. Fast-forward past claim period (30 days)
+      const claimPeriod = await redemptionManager.DEFAULT_CLAIM_PERIOD();
+      await ethers.provider.send("evm_increaseTime", [Number(claimPeriod) + 3600]);
+      await ethers.provider.send("evm_mine");
+
+      // 4. Release expired request via governance
+      await expect(redemptionManager.connect(admin).governanceReleaseExpiredToVault(vaultAddr, requestId))
+        .to.emit(redemptionManager, "RedemptionExpired")
+        .withArgs(vaultAddr, requestId, investor1.address);
+
+      req = await redemptionManager.redemptionRequests(vaultAddr, requestId);
+      expect(req.status).to.equal(RedemptionStatus.EXPIRED);
+    });
+
+    it("Should revert governanceReleaseExpiredToVault if request is not READY", async function () {
+      const vaultAddr = await mockVault.getAddress();
+
+      // Request redemption (PENDING)
+      const tx = await redemptionManager.connect(investor1).requestRedemption(vaultAddr, REDEEM_AMOUNT);
+      const receipt = await tx.wait();
+      const requestLog = receipt.logs.find(log => {
+        try {
+          return redemptionManager.interface.parseLog(log).name === "RedemptionRequested";
+        } catch {
+          return false;
+        }
+      });
+      const parsedLog = redemptionManager.interface.parseLog(requestLog);
+      const requestId = parsedLog.args.requestId;
+
+      await expect(
+        redemptionManager.connect(admin).governanceReleaseExpiredToVault(vaultAddr, requestId)
+      ).to.be.revertedWith("RedemptionManager: not ready");
+    });
+
+    it("Should revert governanceReleaseExpiredToVault if request is not yet expired", async function () {
+      const vaultAddr = await mockVault.getAddress();
+
+      const tx = await redemptionManager.connect(investor1).requestRedemption(vaultAddr, REDEEM_AMOUNT);
+      const receipt = await tx.wait();
+      const requestLog = receipt.logs.find(log => {
+        try {
+          return redemptionManager.interface.parseLog(log).name === "RedemptionRequested";
+        } catch {
+          return false;
+        }
+      });
+      const parsedLog = redemptionManager.interface.parseLog(requestLog);
+      const requestId = parsedLog.args.requestId;
+
+      await redemptionManager.connect(processor).processRedemption(vaultAddr, requestId, REDEEM_AMOUNT);
+
+      await expect(
+        redemptionManager.connect(admin).governanceReleaseExpiredToVault(vaultAddr, requestId)
+      ).to.be.revertedWith("RedemptionManager: not expired");
+    });
+  });
 });

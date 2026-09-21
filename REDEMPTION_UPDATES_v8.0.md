@@ -319,9 +319,9 @@ The v8.0.0 components are active on the Ethereum Sepolia network at these addres
 *   **AssetRegistry**: `0xb103311FFe01849201E892d07E984ad2A17ED62f`
 *   **ComplianceModule**: `0xE48e8F4bd7473eC62Bb72C0114316Fa30437ab8e`
 *   **AssetToken Template**: `0xD1aB6DAC41cC010aE4a6f858824a55BFDF59A70a`
-*   **SyncVault Template**: `0x0EE0148e90F05478E524967C3322AdB5761D4C5E`
-*   **AsyncVault Template**: `0x14CCb54eCD80a1C13E3B4757F82f7e5D2b0E3E1F`
-*   **RedemptionManager**: `0x6D728934aCA64f45B98fE4e07aF6Bbe1C8956F52`
+*   **SyncVault Template**: `0x5c81f5772D63204d764650E8F4c7DE9491c52aB5`
+*   **AsyncVault Template**: `0x73a464eA33549ac78B10A2Fa3Ab2E6f1B36FaDe2`
+*   **RedemptionManager** *(v8.1.0 audit-fix, deployed 2026-09-16)*: `0xAA31e09508Dc42cd3227b0049F99Dca43a65ee12`
 *   **LifecycleExitManager**: `0xC8af899eac24F755704a1ad287fCe62b77929a6c`
 
 ---
@@ -407,3 +407,24 @@ redemptionManager.setSettlementVarianceBPS(500); // 5%
 // Q4 — KYC gate for carbon retirements (optional)
 carbonRetirementManager.setIdentityRegistry(identityRegistryAddress);
 ```
+
+### 6.8 Live Sepolia Deployment (September 16, 2026)
+
+> [!IMPORTANT]
+> The audited v8.1.0 contracts are **deployed and configured** on Ethereum Sepolia. All wiring below was applied on-chain during deployment.
+
+| Contract | Previous Address | New Address (Audit-Fix) | Etherscan |
+|----------|-----------------|------------------------|-----------|
+| **RedemptionManager** | `0x6D728934aCA64f45B98fE4e07aF6Bbe1C8956F52` | `0xAA31e09508Dc42cd3227b0049F99Dca43a65ee12` | [Verified](https://sepolia.etherscan.io/address/0xAA31e09508Dc42cd3227b0049F99Dca43a65ee12#code) |
+| **CarbonRetirementManager** | `0x29f1a6b5052a3a1AF33d18De48a19Ebf17f541d8` | `0x096b9238ad38cC62D75542fD8b273278dff85AaB` | [Verified](https://sepolia.etherscan.io/address/0x096b9238ad38cC62D75542fD8b273278dff85AaB#code) |
+
+**Applied on-chain during deployment:**
+- `rm.setAssetRegistry(0xb103311FFe01849201E892d07E984ad2A17ED62f)` — NAV checks (Q3)
+- `rm.setOwnershipSyncManager(0x096DdB2087c2a896bb5Fda93aC84131e08A91DF5)` — BOR sync (Q1)
+- `rm.setNavOracle(0xd23Ad18c8Db21A79E48e18D8f1aF085999d57867)` — settlement variance (Q3)
+- `vaultFactory.setRedemptionManager(0xAA31e09508Dc42cd3227b0049F99Dca43a65ee12)`
+- `lifecycleExitManager.setRedemptionManager(0xAA31e09508Dc42cd3227b0049F99Dca43a65ee12)`
+- `ownershipSyncManager.authorizeModule(0x096b9238ad38cC62D75542fD8b273278dff85AaB, CARBON_RETIREMENT)`
+
+**Remaining optional configuration:**
+- `crm.setIdentityRegistry(0xA8605BBF965973f324C3f51F4d7121900d7F732D)` — enable Q4 KYC gate for carbon retirements

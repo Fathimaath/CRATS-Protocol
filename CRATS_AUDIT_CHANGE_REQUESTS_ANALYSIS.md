@@ -3,7 +3,7 @@
 **Target Module:** CRATS-EVM Protocol (Layer 3 Financials & Carbon Assets)  
 **Audit Source:** CopyM Platform Internal Security & Compliance Audit  
 **Date:** September 2026  
-**Status:** ✅ ALL FINDINGS RESOLVED — Compiled & Verified (149 contracts, 0 errors)
+**Status:** ✅ ALL FINDINGS RESOLVED — Compiled, Tested (96/96 pass), Deployed & Verified on Sepolia (September 16, 2026)
 
 ---
 
@@ -299,37 +299,52 @@ Compiled 149 Solidity files successfully (evm target: cancun)
 Exit code: 0 — No compilation errors
 ```
 
-### Automated Test Matrix (to run)
+### Automated Test Matrix (RUN — September 16, 2026)
 ```bash
-npx hardhat test test/layer3/RedemptionManager.test.js
-npx hardhat test test/layer3/CarbonRetirementManager.test.js
+npx hardhat test test/layer3/RedemptionManager.test.js        # ✅ 53 passing (2m)
+npx hardhat test test/layer3/CarbonRetirementManager.test.js  # ✅ 43 passing (3m)
 ```
 
-### Test Cases to Validate
+### Test Cases Validated (all passing)
 
-| Test | Expected |
-|------|----------|
-| Q1: `claimRedemption` with mock `OwnershipSyncManager` | `updateBeneficialOwnership` called with `(assetToken, vault, investor, newBalance)` |
-| Q2: `governanceCancelRequest` on READY + expired request | Shares and fee returned to investor; status `CANCELLED` |
-| Q2: `governanceReleaseExpiredToVault` on expired READY | Shares burned/transferred to vault; status `EXPIRED` |
-| Q3: `processRedemption` with assets within 5% of NAV | Succeeds |
-| Q3: `processRedemption` with assets >5% away from NAV | Reverts `"settlement variance exceeds limit"` |
-| Q3: `processRedemption` with `assets == 0` | Succeeds regardless of NAV (CopyM Treasury mode) |
-| Q3: `claimRedemption` with `assets > 0` and USDC configured | Investor receives USDC, not vault tokens |
-| Q4: `requestRetirement` with unverified wallet | Reverts `"investor not KYC-verified"` |
-| Q4: `requestRetirement` with frozen wallet | Reverts `"investor account is frozen"` |
-| Q4: `requestRetirement` with no `identityRegistry` set | Succeeds (open access, backward-compat) |
+| Test | Expected | Result |
+|------|----------|--------|
+| Q1: `claimRedemption` with mock `OwnershipSyncManager` | `updateBeneficialOwnership` called with `(assetToken, vault, investor, newBalance)` | ✅ |
+| Q2: `governanceCancelRequest` on READY + expired request | Shares and fee returned to investor; status `CANCELLED` | ✅ |
+| Q2: `governanceReleaseExpiredToVault` on expired READY | Shares burned/transferred to vault; status `EXPIRED` | ✅ |
+| Q3: `processRedemption` with assets within 5% of NAV | Succeeds | ✅ |
+| Q3: `processRedemption` with assets >5% away from NAV | Reverts `"settlement variance exceeds limit"` | ✅ |
+| Q3: `processRedemption` with `assets == 0` | Succeeds regardless of NAV (CopyM Treasury mode) | ✅ |
+| Q3: `claimRedemption` with `assets > 0` and USDC configured | Investor receives USDC, not vault tokens | ✅ |
+| Q4: `requestRetirement` with unverified wallet | Reverts `"investor not KYC-verified"` | ✅ |
+| Q4: `requestRetirement` with frozen wallet | Reverts `"investor account is frozen"` | ✅ |
+| Q4: `requestRetirement` with no `identityRegistry` set | Succeeds (open access, backward-compat) | ✅ |
 
-### On-Chain Configuration Required After Deployment
+### Sepolia Deployment (September 16, 2026)
+
+| Contract | Previous Address | New Address (Audit-Fix) | Etherscan |
+|----------|-----------------|------------------------|-----------|
+| **RedemptionManager** | `0x6D728934aCA64f45B98fE4e07aF6Bbe1C8956F52` | `0xAA31e09508Dc42cd3227b0049F99Dca43a65ee12` | [Verified](https://sepolia.etherscan.io/address/0xAA31e09508Dc42cd3227b0049F99Dca43a65ee12#code) |
+| **CarbonRetirementManager** | `0x29f1a6b5052a3a1AF33d18De48a19Ebf17f541d8` | `0x096b9238ad38cC62D75542fD8b273278dff85AaB` | [Verified](https://sepolia.etherscan.io/address/0x096b9238ad38cC62D75542fD8b273278dff85AaB#code) |
+
+**Wiring applied on-chain during deployment:**
+- `rm.setAssetRegistry(0xb103311FFe01849201E892d07E984ad2A17ED62f)` — NAV checks (Q3)
+- `rm.setOwnershipSyncManager(0x096DdB2087c2a896bb5Fda93aC84131e08A91DF5)` — BOR sync (Q1)
+- `rm.setNavOracle(0xd23Ad18c8Db21A79E48e18D8f1aF085999d57867)` — settlement variance (Q3)
+- `vaultFactory.setRedemptionManager(0xAA31e09508Dc42cd3227b0049F99Dca43a65ee12)`
+- `lifecycleExitManager.setRedemptionManager(0xAA31e09508Dc42cd3227b0049F99Dca43a65ee12)`
+- `ownershipSyncManager.authorizeModule(0x096b9238ad38cC62D75542fD8b273278dff85AaB, CARBON_RETIREMENT)`
+
+### On-Chain Configuration (already applied on Sepolia)
 
 ```solidity
-// Q1
-redemptionManager.setOwnershipSyncManager(ownershipSyncManagerAddress);
+// Q1 — applied
+redemptionManager.setOwnershipSyncManager(0x096DdB2087c2a896bb5Fda93aC84131e08A91DF5);
 
-// Q3 (optional — skip for full Treasury-payout mode)
-redemptionManager.setNavOracle(navOracleAddress);
+// Q3 — applied (Treasury-payout mode also supported via assets=0)
+redemptionManager.setNavOracle(0xd23Ad18c8Db21A79E48e18D8f1aF085999d57867);
 redemptionManager.setSettlementVarianceBPS(500); // 5%
 
-// Q4 (optional — skip for open access)
-carbonRetirementManager.setIdentityRegistry(identityRegistryAddress);
+// Q4 — OPTIONAL, pending: enable KYC gate for carbon retirements
+carbonRetirementManager.setIdentityRegistry(0xA8605BBF965973f324C3f51F4d7121900d7F732D);
 ```

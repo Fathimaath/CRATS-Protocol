@@ -988,6 +988,19 @@ contract RedemptionManager is AccessControl, ReentrancyGuard {
             try IERC20(vault).transfer(vault, request.shares) {} catch {}
         }
 
+        // Sweep the fee to FeeEngine
+        if (request.feePaid > 0) {
+            address feeEngine = address(0);
+            try IVault(vault).feeEngine() returns (address _feeEngine) {
+                feeEngine = _feeEngine;
+            } catch {}
+            if (feeEngine != address(0)) {
+                address usdcToken = address(IFeeEngine(feeEngine).usdc());
+                IERC20(usdcToken).safeTransfer(feeEngine, request.feePaid);
+                IFeeEngine(feeEngine).receiveFee(vault, request.feePaid);
+            }
+        }
+
         emit RedemptionExpired(vault, requestId, request.investor);
     }
 

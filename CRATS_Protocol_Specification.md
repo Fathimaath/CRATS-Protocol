@@ -1334,9 +1334,9 @@ contract LifecycleExitManager is
 | NAVOracle | `0xd23Ad18c8Db21A79E48e18D8f1aF085999d57867` |
 | **DisputeResolver** *(v7.0)* | `0xB69308E970967b2D5073f2Ed3904A816De5cb2e6` |
 | **NAVScheduler** *(v7.0)* | `0xD3e9f677a20e1CF377a0f52E18bD8aecCd0A60aD` |
-| **RedemptionManager** *(v8.0)* | `0x6D728934aCA64f45B98fE4e07aF6Bbe1C8956F52` |
+| **RedemptionManager** *(v8.1.0 audit-fix, deployed 2026-09-16)* | `0xAA31e09508Dc42cd3227b0049F99Dca43a65ee12` |
 | **LifecycleExitManager** *(v8.0/v9.0)* | `0xC8af899eac24F755704a1ad287fCe62b77929a6c` |
-| **CarbonRetirementManager** *(v10.1.0)* | `0x29f1a6b5052a3a1AF33d18De48a19Ebf17f541d8` |
+| **CarbonRetirementManager** *(v10.1.0, audit-fix deployed 2026-09-16)* | `0x096b9238ad38cC62D75542fD8b273278dff85AaB` |
 | GovernanceMultisig | `0x9F2CCD782AF98f1E212738F8cB68B76739d5a5D8` |
 | SanctionsOracle | `0x62514c01bC858938b16A1f419312aB28942d3b0C` |
 | Mock USDC | `0xf3f6f980917e9304D8dC9828A463BDf4b59239D4` |
@@ -1368,4 +1368,5 @@ contract LifecycleExitManager is
 | v9.0.0 | 2026-07-09 | Beneficial Ownership Sync (BOR) through OwnershipSyncManager middleware; optimized registry states and removed transaction history lists on-chain; updated SyncVault and AsyncVault templates; updated VaultFactory to automatically set compliance modules on clones; upgraded LifecycleExitManager to take explicit investor list parameter; deployed and registered CarbonCreditPlugin. |
 | v10.0.0 | 2026-07-16 | Institutional Carbon Credit Extension: (1) Carbon archetype corrected to STATIC_HOLD; (2) DMSRegistry and CarbonAssetMetadataStore made optional; (3) Payout & deposit backend-orchestrated (no USDC in vaults); (4) NAV + PoR wired to SyncVault; (5) Serial range registered at tokenization, allocated FIFO on retirement; (6) Deployed CarbonRetirementManager and CarbonBatchManager on Sepolia. |
 | **v10.1.0** | **2026-07-20** | **Registry Verification, Retry & Governance Policy Extension: (1) Extended `CarbonRetirementManager` with 6 investor-visible statuses (`PENDING_REGISTRY`, `COMPLIANCE_REVIEW`, `GOVERNANCE_REVIEW`, `CONFIRMED`, `FAILED`, `CANCELLED`); (2) Integrated configurable automatic retries (`maxRetries`: 3, `retryInterval`: 8h); (3) Added SLA enforcement (`maxWaitPeriod`: 24h) with automated compliance & governance escalation; (4) Added Governance mandate hooks (`governanceExtendSLA`, `governanceContinueHold`, `governanceCancel` with credit release); (5) On-chain audit trail logging per retirement; (6) Deployed upgraded `CarbonRetirementManager` to Ethereum Sepolia at `0x29f1a6b5052a3a1AF33d18De48a19Ebf17f541d8`.** |
+| **v10.1.1 (Audit Fix)** | **2026-09-16** | **CopyM Internal Security & Compliance Audit: (1) Q1 `RedemptionManager` BOR sync after `claimRedemption` share burn via `OwnershipSyncManager`; (2) Q2 recovery paths `governanceCancelRequest` (READY+expired) + `governanceReleaseExpiredToVault` with new `EXPIRED` status; (3) Q3 NAV variance enforcement (`getWeightedNAV` + `settlementVarianceBPS` 5%) and USDC/USDT payout fix (`FeeEngine.usdc()` at claim time); (4) Q4 optional KYC gate in `CarbonRetirementManager.requestRetirement`. Fresh deployments on Sepolia: `RedemptionManager` `0xAA31e09508Dc42cd3227b0049F99Dca43a65ee12`, `CarbonRetirementManager` `0x096b9238ad38cC62D75542fD8b273278dff85AaB`. All 96 tests pass.** |
 

@@ -105,6 +105,31 @@ Following the CopyM platform integration audit, **four findings** were identifie
 | **USDC/USDT Payout** | `FeeEngine.usdc()` resolved at claim time | Correct stablecoin settlement; eliminates vault share re-transfer bug |
 | **KYC Gate (Carbon)** | `IIdentityRegistry.isVerified()` + `isFrozen()` | Ensures only verified, non-frozen investors can retire carbon credits |
 
+### Sepolia Deployment (September 16, 2026)
+
+Both contracts were freshly deployed and verified on Sepolia with all Q1–Q3 wiring pre-applied:
+
+| Contract | Previous Address | New Address (Audit-Fix) | Etherscan |
+|----------|-----------------|------------------------|-----------|
+| **RedemptionManager** | `0x6D728934aCA64f45B98fE4e07aF6Bbe1C8956F52` | `0xAA31e09508Dc42cd3227b0049F99Dca43a65ee12` | [Verified](https://sepolia.etherscan.io/address/0xAA31e09508Dc42cd3227b0049F99Dca43a65ee12#code) |
+| **CarbonRetirementManager** | `0x29f1a6b5052a3a1AF33d18De48a19Ebf17f541d8` | `0x096b9238ad38cC62D75542fD8b273278dff85AaB` | [Verified](https://sepolia.etherscan.io/address/0x096b9238ad38cC62D75542fD8b273278dff85AaB#code) |
+
+**On-chain wiring applied during deployment:**
+- `rm.setAssetRegistry(0xb103311FFe01849201E892d07E984ad2A17ED62f)` — NAV checks (Q3)
+- `rm.setOwnershipSyncManager(0x096DdB2087c2a896bb5Fda93aC84131e08A91DF5)` — BOR sync (Q1)
+- `rm.setNavOracle(0xd23Ad18c8Db21A79E48e18D8f1aF085999d57867)` — settlement variance (Q3)
+- `vaultFactory.setRedemptionManager(0xAA31e09508Dc42cd3227b0049F99Dca43a65ee12)`
+- `lifecycleExitManager.setRedemptionManager(0xAA31e09508Dc42cd3227b0049F99Dca43a65ee12)`
+- `ownershipSyncManager.authorizeModule(0x096b9238ad38cC62D75542fD8b273278dff85AaB, CARBON_RETIREMENT)`
+
+### Test Results
+
+All 96 tests pass (0 failures):
+```
+npx hardhat test test/layer3/RedemptionManager.test.js        — 53 passing (2m)
+npx hardhat test test/layer3/CarbonRetirementManager.test.js  — 43 passing (3m)
+```
+
 ### Audit Reference Documents
 
 - [`CRATS_AUDIT_CHANGE_REQUESTS_ANALYSIS.md`](file:///c:/Users/anask/Desktop/CPM/CRATS-EVM/CRATS_AUDIT_CHANGE_REQUESTS_ANALYSIS.md) — Full technical analysis, root cause, and implementation specification
@@ -113,8 +138,7 @@ Following the CopyM platform integration audit, **four findings** were identifie
 ---
 
 > [!IMPORTANT]
-> **Post-Deployment Configuration Required**: The audit fixes are backward-compatible and default to disabled. Activate them on each deployment by calling the admin setters:
-> - `redemptionManager.setOwnershipSyncManager(address)` — enables BOR sync (Q1)
-> - `redemptionManager.setNavOracle(address)` — enables NAV variance check (Q3)
-> - `carbonRetirementManager.setIdentityRegistry(address)` — enables KYC gate (Q4)
+> **Post-Deployment Status (September 16, 2026)**: Q1 (BOR sync) and Q3 (NAV oracle) are configured on-chain. To enable the KYC gate for carbon retirements (Q4), call:
+> - `carbonRetirementManager.setIdentityRegistry(0xA8605BBF965973f324C3f51F4d7121900d7F732D)` — enables KYC gate (Q4)
+> - `complianceGate.setRedemptionManager(0xAA31e09508Dc42cd3227b0049F99Dca43a65ee12)` — if ComplianceGate is deployed
 
