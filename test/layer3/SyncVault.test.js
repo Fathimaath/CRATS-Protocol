@@ -482,4 +482,47 @@ describe("Layer 3 - SyncVault (ERC-4626)", function () {
       ).to.be.reverted;
     });
   });
+
+  describe("depositFromTreasury", function () {
+    const ASSET_AMOUNT = ethers.parseEther("100");
+
+    it("Should allow operator to deposit from treasury and mint shares 1:1", async function () {
+      await mockAsset.mint(operator.address, ASSET_AMOUNT);
+      await mockAsset.connect(operator).approve(await syncVault.getAddress(), ASSET_AMOUNT);
+
+      const sharesBefore = await syncVault.balanceOf(user1.address);
+      await syncVault.connect(operator).depositFromTreasury(ASSET_AMOUNT, user1.address, ethers.parseEther("100"));
+      const sharesAfter = await syncVault.balanceOf(user1.address);
+
+      expect(sharesAfter - sharesBefore).to.equal(ASSET_AMOUNT);
+    });
+
+    it("Should allow designated treasury address to depositFromTreasury", async function () {
+      await syncVault.connect(admin).setTreasury(random.address);
+      expect(await syncVault.treasury()).to.equal(random.address);
+
+      await mockAsset.mint(random.address, ASSET_AMOUNT);
+      await mockAsset.connect(random).approve(await syncVault.getAddress(), ASSET_AMOUNT);
+
+      await syncVault.connect(random).depositFromTreasury(ASSET_AMOUNT, user2.address, ethers.parseUnits("100", 6));
+      expect(await syncVault.balanceOf(user2.address)).to.equal(ASSET_AMOUNT);
+    });
+
+    it("Should reject unauthorized callers", async function () {
+      await mockAsset.connect(user1).approve(await syncVault.getAddress(), ASSET_AMOUNT);
+      await expect(
+        syncVault.connect(user1).depositFromTreasury(ASSET_AMOUNT, user2.address, ethers.parseEther("100"))
+      ).to.be.revertedWith("SyncVault: unauthorized caller");
+    });
+
+    it("Should reject zero asset tokens or zero USDC paid", async function () {
+      await expect(
+        syncVault.connect(operator).depositFromTreasury(0, user1.address, ethers.parseEther("100"))
+      ).to.be.revertedWith("SyncVault: zero asset tokens");
+
+      await expect(
+        syncVault.connect(operator).depositFromTreasury(ASSET_AMOUNT, user1.address, 0)
+      ).to.be.revertedWith("SyncVault: zero USDC amount");
+    });
+  });
 });

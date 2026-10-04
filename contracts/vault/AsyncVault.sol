@@ -12,6 +12,7 @@ import "../interfaces/standards/IERC7540.sol";
 import "../interfaces/identity/IIdentityRegistry.sol";
 import "../interfaces/compliance/ICompliance.sol";
 import "../interfaces/asset/IAssetRegistry.sol";
+import "../utils/AssetConfig.sol";
 import "./BaseVault.sol";
 
 /**
@@ -66,6 +67,7 @@ contract AsyncVault is
         __BaseVault_init(asset_, assetRegistry_, syncManager_);
 
         _grantRole(DEFAULT_ADMIN_ROLE, admin);
+        _grantRole(DEFAULT_ADMIN_ROLE, _msgSender()); // Grant to Factory for configuration
         _grantRole(OPERATOR_ROLE, admin);
         _grantRole(FULFILLER_ROLE, admin);
 
@@ -291,15 +293,62 @@ contract AsyncVault is
         complianceModule = compliance;
     }
 
-    function setCategory(bytes32 cat) external { category = cat; }
+    address public treasury;
 
-    function setSettlementPeriod(uint256 period) external {
+    function setTreasury(address _treasury) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        require(_treasury != address(0), "AsyncVault: invalid treasury");
+        treasury = _treasury;
+        _grantRole(OPERATOR_ROLE, _treasury);
+    }
+
+    function requestDepositFromTreasury(
+        uint256 assetTokens,
+        address investor,
+        uint256 /* usdcAmountPaid */
+    ) external nonReentrant returns (uint256 requestId) {
+        require(!isClosed, "Vault: closed");
+        require(
+            hasRole(OPERATOR_ROLE, msg.sender) || (treasury != address(0) && msg.sender == treasury),
+            "AsyncVault: unauthorized"
+        );
+        require(assetTokens > 0, "ZERO_ASSETS");
+        require(investor != address(0), "INVALID_INVESTOR");
+
+        if (complianceModule != address(0)) {
+            bool restricted = false;
+            try ICompliance(complianceModule).isInvestorRestricted(asset(), investor) returns (bool _restricted) {
+                restricted = _restricted;
+            } catch {}
+            require(!restricted, "AsyncVault: Holder restricted");
+        }
+
+        IERC20(asset()).safeTransferFrom(msg.sender, address(this), assetTokens);
+        _pendingDeposit[investor] += assetTokens;
+        _totalPendingDepositAssets += assetTokens;
+        requestId = _nextDepositRequestId[investor]++;
+
+        if (address(syncManager) != address(0)) {
+            try syncManager.updateBeneficialOwnership(
+                asset(),
+                address(this),
+                investor,
+                balanceOf(investor) + convertToShares(assetTokens)
+            ) {} catch {}
+        }
+
+        emit DepositRequest(investor, msg.sender, requestId, msg.sender, assetTokens);
+        return requestId;
+    }
+
+    function setCategory(bytes32 cat) external onlyRole(DEFAULT_ADMIN_ROLE) { category = cat; }
+
+    function setSettlementPeriod(uint256 period) external onlyRole(DEFAULT_ADMIN_ROLE) {
         require(period > 0, "invalid period");
         settlementPeriod = period;
     }
 
     function version() external pure returns (string memory) {
-        return "3.0.0";
+        return AssetConfig.VERSION;
     }
 
     function emergencyWithdraw(uint256 amount, address to) external onlyRole(DEFAULT_ADMIN_ROLE) {

@@ -320,7 +320,7 @@ contract SyncVault is
         IERC20(asset()).safeTransfer(to, amount);
     }
 
-    function setCategory(bytes32 category_) external override {
+    function setCategory(bytes32 category_) external override onlyRole(DEFAULT_ADMIN_ROLE) {
         category = category_;
     }
 
@@ -384,14 +384,19 @@ contract SyncVault is
     function setTreasury(address _treasury) external onlyRole(DEFAULT_ADMIN_ROLE) {
         require(_treasury != address(0), "SyncVault: invalid treasury");
         treasury = _treasury;
+        _grantRole(OPERATOR_ROLE, _treasury);
     }
 
     function depositFromTreasury(
         uint256 assetTokens,
         address investor,
         uint256 usdcAmountPaid
-    ) external onlyRole(OPERATOR_ROLE) nonReentrant returns (uint256) {
+    ) external nonReentrant returns (uint256) {
         require(!isClosed, "SyncVault: closed");
+        require(
+            hasRole(OPERATOR_ROLE, msg.sender) || (treasury != address(0) && msg.sender == treasury),
+            "SyncVault: unauthorized caller"
+        );
         require(investor != address(0), "SyncVault: invalid investor");
         require(assetTokens > 0, "SyncVault: zero asset tokens");
         require(usdcAmountPaid > 0, "SyncVault: zero USDC amount");
@@ -403,10 +408,20 @@ contract SyncVault is
             uint256 navPerToken = INAVOracle(navOracle).getNavForMintValidation(assetId);
             require(navPerToken > 0, "SyncVault: invalid NAV from oracle");
 
-            uint256 expectedAsset = (usdcAmountPaid * 1e18) / navPerToken;
+            // Normalize USDC: if passed in 6 decimals (< 1e14), scale to 18 decimals
+            uint256 normalizedUSDC = usdcAmountPaid < 1e14 ? usdcAmountPaid * 1e12 : usdcAmountPaid;
+
+            // Path A: Check if usdcAmountPaid is total cash paid for all assetTokens
+            uint256 expectedAsset = (normalizedUSDC * 1e18) / navPerToken;
             uint256 diff = assetTokens > expectedAsset ? assetTokens - expectedAsset : expectedAsset - assetTokens;
-            // Validate within 500 BPS (5%)
-            require(diff * 10000 / expectedAsset <= 500, "SyncVault: deposit variance exceeds threshold");
+            bool matchesTotal = (expectedAsset > 0 && (diff * 10000 / expectedAsset <= 500));
+
+            // Path B: Fallback check if caller passed per-unit USDC price (e.g. legacy backend passing unit purchasePrice)
+            if (!matchesTotal) {
+                uint256 expectedAssetFromUnitPrice = (normalizedUSDC * assetTokens) / navPerToken;
+                uint256 diffUnit = assetTokens > expectedAssetFromUnitPrice ? assetTokens - expectedAssetFromUnitPrice : expectedAssetFromUnitPrice - assetTokens;
+                require(expectedAssetFromUnitPrice > 0 && (diffUnit * 10000 / expectedAssetFromUnitPrice <= 500), "SyncVault: deposit variance exceeds threshold");
+            }
         }
 
         lastDepositUSDCAmount = usdcAmountPaid;

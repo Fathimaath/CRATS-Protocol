@@ -135,9 +135,11 @@ describe("Layer 3 - AsyncVault (ERC-7540)", function () {
       ).to.be.reverted;
     });
 
-    it("Should allow anyone to set settlement period (no access control)", async function () {
-      // Note: setSettlementPeriod doesn't have access control in this implementation
-      await asyncVault.connect(user2).setSettlementPeriod(3600);
+    it("Should only allow admin to set settlement period", async function () {
+      await expect(
+        asyncVault.connect(user2).setSettlementPeriod(3600)
+      ).to.be.reverted;
+      await asyncVault.connect(admin).setSettlementPeriod(3600);
       expect(await asyncVault.settlementPeriod()).to.equal(3600);
     });
 
@@ -644,6 +646,32 @@ describe("Layer 3 - AsyncVault (ERC-7540)", function () {
       const balanceAfter = await mockAsset.balanceOf(user1.address);
 
       expect(balanceAfter).to.be.greaterThan(balanceBefore);
+    });
+  });
+
+  describe("requestDepositFromTreasury", function () {
+    it("Should allow operator or treasury to request deposit from treasury", async function () {
+      await asyncVault.connect(admin).setTreasury(operator.address);
+      expect(await asyncVault.treasury()).to.equal(operator.address);
+
+      await mockAsset.mint(operator.address, DEPOSIT_AMOUNT);
+      await mockAsset.connect(operator).approve(await asyncVault.getAddress(), DEPOSIT_AMOUNT);
+
+      const reqId = await asyncVault.connect(operator).requestDepositFromTreasury(
+        DEPOSIT_AMOUNT,
+        user1.address,
+        DEPOSIT_AMOUNT
+      );
+      expect(reqId).to.not.be.undefined;
+
+      const pending = await asyncVault.pendingDepositRequest(0, user1.address);
+      expect(pending).to.equal(DEPOSIT_AMOUNT);
+    });
+
+    it("Should reject unauthorized callers for requestDepositFromTreasury", async function () {
+      await expect(
+        asyncVault.connect(user2).requestDepositFromTreasury(DEPOSIT_AMOUNT, user1.address, DEPOSIT_AMOUNT)
+      ).to.be.revertedWith("AsyncVault: unauthorized");
     });
   });
 });

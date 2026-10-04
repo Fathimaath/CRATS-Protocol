@@ -1,6 +1,6 @@
 {
   "name": "crats-layer1-test",
-  "version": "4.0.0",
+  "version": "10.1.0",
   "main": "index.js",
   "scripts": {
     "compile": "npx hardhat compile",

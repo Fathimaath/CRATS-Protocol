@@ -87,6 +87,14 @@ interface IAsyncVault {
     function setCategory(bytes32 category_) external;
 
     function setSettlementPeriod(uint256 period) external;
+    function setTreasury(address treasury) external;
+    function requestDepositFromTreasury(
+        uint256 assetTokens,
+        address investor,
+        uint256 usdcAmountPaid
+    ) external returns (uint256 requestId);
+    function closeVault() external;
+    function burnShares(address account, uint256 amount) external;
 
     function initialize(
         address asset_,
@@ -106,6 +114,10 @@ interface IAsyncVault {
     function category() external view returns (bytes32);
 
     function settlementPeriod() external view returns (uint256);
+
+    function treasury() external view returns (address);
+
+    function isClosed() external view returns (bool);
 
     function version() external pure returns (string memory);
 }

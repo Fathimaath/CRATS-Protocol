@@ -66,4 +66,23 @@ interface ISyncVault {
     function totalMinted() external view returns (uint256);
     function totalBurned() external view returns (uint256);
     function burnShares(address account, uint256 amount) external;
+
+    // ========== Treasury & Financial Architecture ==========
+
+    function setTreasury(address treasury) external;
+    function setFeeEngine(address feeEngine) external;
+    function setNavOracle(address navOracle) external;
+    function setAssetId(bytes32 assetId) external;
+    function depositFromTreasury(
+        uint256 assetTokens,
+        address investor,
+        uint256 usdcAmountPaid
+    ) external returns (uint256);
+    function closeVault() external;
+
+    function isClosed() external view returns (bool);
+    function treasury() external view returns (address);
+    function feeEngine() external view returns (address);
+    function navOracle() external view returns (address);
+    function assetId() external view returns (bytes32);
 }
