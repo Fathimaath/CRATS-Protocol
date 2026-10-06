@@ -1,9 +1,9 @@
 {
   "network": "sepolia",
-  "version": "10.1.0",
+  "version": "10.2.0",
   "chainId": "11155111",
   "deployer": "0x5537dbc19eeE936A615B151c8C5983FBF735C583",
-  "timestamp": "2026-10-04T15:40:31.216Z",
+  "timestamp": "2026-10-06T11:58:29.579Z",
   "contracts": {
     "kycRegistry": "0xb4C0CD81eA49Dc4AC94472004955C7EE9f99Dc5c",
     "identitySBT": "0x5e88d8a83dE2F46F6809BaA06299f5113f3607A7",
@@ -18,8 +18,8 @@
     "assetFactory": "0xeCd44390e9fC54d6f25726b7076FA5F601695F05",
     "assetRegistry": "0xb103311FFe01849201E892d07E984ad2A17ED62f",
     "realEstatePlugin": "0xC5c3c0916f02119ed16E70a5970FABA692D77496",
-    "syncVaultTemplate": "0xc9B9fED44301dc4E2b431C8fCadEd92206b8D0Bf",
-    "vaultFactory": "0x9334dB9f4AE063b2C4FdEb40F2a63a7149d52C3c",
+    "syncVaultTemplate": "0x6720580d11EB60A78DFFC99e987F670F47D9Bb50",
+    "vaultFactory": "0xf99542Bc951D9B1B765AB61a1c44DceF1998fa25",
     "yieldDistributor": "0xeE155a2DEeA1b4Fa4eEC51eA1b76343fd1BEA449",
     "usdc": "0xf3f6f980917e9304D8dC9828A463BDf4b59239D4",
     "usdt": "0x855BeB487504596AAf75dE0Edc4EB70270FcB68A",
@@ -41,9 +41,9 @@
     "resolverRoleGranted": true,
     "schedulerAdminGranted": true,
     "navSchedulesInitialized": true,
-    "asyncVaultTemplate": "0xD1B594EecEb90f262cc82C8AdD7B9d05B1bCdeF0",
-    "redemptionManager": "0x48D9b40eD1FAF5bcc9EeB4E9bFAcD7c9F17E51Fa",
-    "lifecycleExitManager": "0xC8af899eac24F755704a1ad287fCe62b77929a6c",
+    "asyncVaultTemplate": "0x65b865dB0fC1aC1e232fDBbD73Ef3Ec0E7B40471",
+    "redemptionManager": "0x8A7A690D4405feA54FeBFf90a4f8aA2603DA1821",
+    "lifecycleExitManager": "0xFC9E7618a21534B40a1Cc90bDF33d9dAec3EF556",
     "syncManager": "0x096DdB2087c2a896bb5Fda93aC84131e08A91DF5",
     "carbonCreditPlugin": "0x8E97F22574b57F891b67575eA199012b5Ae59Bf2",
     "carbonCreditPluginRegistered": true,
@@ -53,6 +53,7 @@
     "carbonBatchManager": "0xE3dE123E20429F5D9d6cEd8C6C167e844f060a09",
     "carbonMetadataStore": "0xe15431397391d67CE9573c3D12315E547569a44b",
     "carbonRetirementManager": "0x096b9238ad38cC62D75542fD8b273278dff85AaB",
-    "governanceMultisig": "0x9F2CCD782AF98f1E212738F8cB68B76739d5a5D8"
+    "governanceMultisig": "0x9F2CCD782AF98f1E212738F8cB68B76739d5a5D8",
+    "treasury": "0x08a9a44dA0BF5eD6bF9027da175dd60949f17d6d"
   }
 }

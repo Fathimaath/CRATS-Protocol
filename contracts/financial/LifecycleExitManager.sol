@@ -60,6 +60,11 @@ contract LifecycleExitManager is
     // vault => investor => amount
     mapping(address => mapping(address => uint256)) public escrowedSettlements;
 
+    // Per-vault batch tracking & idempotency
+    mapping(address => mapping(address => bool)) public hasHolderExited;
+    mapping(address => uint256) public totalSharesProcessed;
+    mapping(address => uint256) public initialTotalShares;
+
     // v10 Precondition State
     address public navOracle;
     address public redemptionManager;
@@ -72,7 +77,10 @@ contract LifecycleExitManager is
     event ExitPaused(address indexed vault, uint256 timestamp);
     event ExitResumed(address indexed vault, uint256 timestamp);
     event LifecycleExitExecuted(address indexed vault, uint256 settlementAmount, uint256 timestamp);
+    event ExitBatchExecuted(address indexed vault, uint256 count, uint256 sharesProcessed);
+    event ExitFinalized(address indexed vault, uint256 timestamp);
     event EscrowClaimed(address indexed vault, address indexed investor, uint256 amount);
+    event UnclaimedEscrowSwept(address indexed vault, address indexed holder, address indexed recipient, uint256 amount);
 
     /// @custom:oz-upgrades-unsafe-allow constructor
     constructor() {
@@ -174,6 +182,9 @@ contract LifecycleExitManager is
         // Transfer settlement funds (USDC) from sender to this contract
         usdc.safeTransferFrom(msg.sender, address(this), settlementAmount);
 
+        initialTotalShares[vault] = IVault(vault).totalSupply();
+        totalSharesProcessed[vault] = 0;
+
         vaultExits[vault] = ExitInfo({
             status: ExitStatus.VERIFIED,
             settlementAmount: settlementAmount,
@@ -195,46 +206,56 @@ contract LifecycleExitManager is
         emit ExitResumed(vault, block.timestamp);
     }
 
-    function executeExit(
+    /**
+     * @notice Executes exit distributions in batches to prevent block gas limit exhaustion
+     */
+    function executeExitBatch(
         address vault,
         address[] calldata investors
-    ) external onlyRole(DEFAULT_ADMIN_ROLE) nonReentrant {
+    ) public onlyRole(DEFAULT_ADMIN_ROLE) nonReentrant {
         ExitInfo storage exit = vaultExits[vault];
         require(exit.status == ExitStatus.VERIFIED, "LifecycleExitManager: exit not verified or is paused");
         require(investors.length > 0, "LifecycleExitManager: no investors provided");
 
         uint256 settlementAmount = exit.settlementAmount;
-        exit.status = ExitStatus.EXECUTED;
-
         address assetToken = IVault(vault).asset();
-        uint256 totalShares = IVault(vault).totalSupply();
+        uint256 totalShares = initialTotalShares[vault];
+        if (totalShares == 0) {
+            totalShares = IVault(vault).totalSupply() + totalSharesProcessed[vault];
+            initialTotalShares[vault] = totalShares;
+        }
         require(totalShares > 0, "LifecycleExitManager: no shares to exit");
 
         address comp = IVault(vault).complianceModule();
-
-        uint256 processedShares = 0;
+        uint256 batchSharesProcessed = 0;
 
         for (uint256 i = 0; i < investors.length; i++) {
             address investor = investors[i];
+            if (hasHolderExited[vault][investor]) continue; // Idempotent: skip already processed
+
             IAssetRegistry.BeneficialOwner memory record = assetRegistry.getBeneficialOwner(assetToken, vault, investor);
             uint256 shares = record.vaultShares;
             if (shares == 0) continue;
 
+            hasHolderExited[vault][investor] = true;
+
             uint256 entitlement = (shares * settlementAmount) / totalShares;
-            if (entitlement == 0) continue;
+            if (entitlement > 0) {
+                // Check if investor is restricted in Compliance
+                bool isRestricted = false;
+                if (comp != address(0)) {
+                    try ICompliance(comp).isInvestorRestricted(assetToken, investor) returns (bool _restricted) {
+                        isRestricted = _restricted;
+                    } catch {}
+                }
 
-            // Check if investor is restricted in Compliance
-            bool isRestricted = false;
-            if (comp != address(0)) {
-                isRestricted = ICompliance(comp).isInvestorRestricted(assetToken, investor);
-            }
-
-            if (isRestricted) {
-                // Route to escrow sub-balance
-                escrowedSettlements[vault][investor] += entitlement;
-            } else {
-                // Payout directly
-                usdc.safeTransfer(investor, entitlement);
+                if (isRestricted) {
+                    // Route to escrow sub-balance
+                    escrowedSettlements[vault][investor] += entitlement;
+                } else {
+                    // Payout directly
+                    usdc.safeTransfer(investor, entitlement);
+                }
             }
 
             // Programmatically burn vault shares
@@ -243,16 +264,28 @@ contract LifecycleExitManager is
             // Programmatically burn asset tokens from the vault (which holds the underlying RWA)
             IAssetToken(assetToken).burnFromExcludingAllowance(vault, shares);
 
-            processedShares += shares;
+            batchSharesProcessed += shares;
         }
 
-        // Precondition #1: All investors paid (processed)
-        require(processedShares == totalShares, "LifecycleExitManager: not all investors processed");
+        totalSharesProcessed[vault] += batchSharesProcessed;
+        emit ExitBatchExecuted(vault, investors.length, batchSharesProcessed);
+    }
 
-        // Precondition #2: All shares burned
-        require(IVault(vault).totalSupply() == 0, "LifecycleExitManager: shares not fully burned");
+    /**
+     * @notice Finalizes vault exit once 100% of shares have been settled across batches
+     */
+    function finalizeExit(address vault) public onlyRole(DEFAULT_ADMIN_ROLE) nonReentrant {
+        ExitInfo storage exit = vaultExits[vault];
+        require(exit.status == ExitStatus.VERIFIED, "LifecycleExitManager: exit not verified");
+        
+        uint256 remainingSupply = IVault(vault).totalSupply();
+        require(remainingSupply == 0, "LifecycleExitManager: shares not fully burned");
 
-        // Precondition #3: BOR synchronized
+        exit.status = ExitStatus.EXECUTED;
+
+        address assetToken = IVault(vault).asset();
+
+        // BOR synchronized
         if (ownershipSyncManager != address(0)) {
             (bool success, ) = ownershipSyncManager.call(
                 abi.encodeWithSignature("updateOnVaultClosure(address,address)", assetToken, vault)
@@ -263,7 +296,37 @@ contract LifecycleExitManager is
         // Close the vault
         IVault(vault).closeVault();
 
-        emit LifecycleExitExecuted(vault, settlementAmount, block.timestamp);
+        emit ExitFinalized(vault, block.timestamp);
+        emit LifecycleExitExecuted(vault, exit.settlementAmount, block.timestamp);
+    }
+
+    /**
+     * @notice Single-transaction execution wrapper for backwards compatibility
+     */
+    function executeExit(
+        address vault,
+        address[] calldata investors
+    ) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        executeExitBatch(vault, investors);
+        finalizeExit(vault);
+    }
+
+    /**
+     * @notice Governance/Compliance recovery for permanently locked escrow
+     */
+    function sweepUnclaimedEscrow(
+        address vault,
+        address restrictedHolder,
+        address recipient
+    ) external onlyRole(DEFAULT_ADMIN_ROLE) nonReentrant {
+        require(recipient != address(0), "LifecycleExitManager: invalid recipient");
+        uint256 amount = escrowedSettlements[vault][restrictedHolder];
+        require(amount > 0, "LifecycleExitManager: no escrowed funds");
+
+        escrowedSettlements[vault][restrictedHolder] = 0;
+        usdc.safeTransfer(recipient, amount);
+
+        emit UnclaimedEscrowSwept(vault, restrictedHolder, recipient, amount);
     }
 
     function claimEscrow(address vault) external nonReentrant {

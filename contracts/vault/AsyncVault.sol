@@ -12,6 +12,9 @@ import "../interfaces/standards/IERC7540.sol";
 import "../interfaces/identity/IIdentityRegistry.sol";
 import "../interfaces/compliance/ICompliance.sol";
 import "../interfaces/asset/IAssetRegistry.sol";
+import "../interfaces/vault/IAsyncVault.sol";
+import "../interfaces/financial/IFeeEngine.sol";
+import "../interfaces/financial/INAVOracle.sol";
 import "../utils/AssetConfig.sol";
 import "./BaseVault.sol";
 
@@ -47,6 +50,13 @@ contract AsyncVault is
     bytes32 public category;
     uint256 public settlementPeriod;
     bool public isClosed;
+
+    // FeeEngine / NAVOracle Integration
+    address public feeEngine;
+    address public navOracle;
+    bytes32 public assetId;
+    uint256 public lastDepositUSDCAmount;
+
     bytes32 public constant OPERATOR_ROLE = keccak256("OPERATOR_ROLE");
     bytes32 public constant FULFILLER_ROLE = keccak256("FULFILLER_ROLE");
 
@@ -301,10 +311,22 @@ contract AsyncVault is
         _grantRole(OPERATOR_ROLE, _treasury);
     }
 
+    function setFeeEngine(address _feeEngine) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        feeEngine = _feeEngine;
+    }
+
+    function setNavOracle(address _navOracle) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        navOracle = _navOracle;
+    }
+
+    function setAssetId(bytes32 _assetId) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        assetId = _assetId;
+    }
+
     function requestDepositFromTreasury(
         uint256 assetTokens,
         address investor,
-        uint256 /* usdcAmountPaid */
+        uint256 usdcAmountPaid
     ) external nonReentrant returns (uint256 requestId) {
         require(!isClosed, "Vault: closed");
         require(
@@ -313,6 +335,7 @@ contract AsyncVault is
         );
         require(assetTokens > 0, "ZERO_ASSETS");
         require(investor != address(0), "INVALID_INVESTOR");
+        require(usdcAmountPaid > 0, "AsyncVault: zero USDC amount");
 
         if (complianceModule != address(0)) {
             bool restricted = false;
@@ -321,6 +344,29 @@ contract AsyncVault is
             } catch {}
             require(!restricted, "AsyncVault: Holder restricted");
         }
+
+        // Fetch NAV per token and validate variance (AUD-03)
+        if (navOracle != address(0)) {
+            uint256 navPerToken = INAVOracle(navOracle).getNavForMintValidation(assetId);
+            require(navPerToken > 0, "AsyncVault: invalid NAV from oracle");
+
+            // Normalize USDC: if passed in 6 decimals (< 1e14), scale to 18 decimals
+            uint256 normalizedUSDC = usdcAmountPaid < 1e14 ? usdcAmountPaid * 1e12 : usdcAmountPaid;
+
+            // Path A: Check if usdcAmountPaid is total cash paid for all assetTokens
+            uint256 expectedAsset = (normalizedUSDC * 1e18) / navPerToken;
+            uint256 diff = assetTokens > expectedAsset ? assetTokens - expectedAsset : expectedAsset - assetTokens;
+            bool matchesTotal = (expectedAsset > 0 && (diff * 10000 / expectedAsset <= 500));
+
+            // Path B: Fallback check if caller passed per-unit USDC price (e.g. legacy backend passing unit purchasePrice)
+            if (!matchesTotal) {
+                uint256 expectedAssetFromUnitPrice = (normalizedUSDC * assetTokens) / navPerToken;
+                uint256 diffUnit = assetTokens > expectedAssetFromUnitPrice ? assetTokens - expectedAssetFromUnitPrice : expectedAssetFromUnitPrice - assetTokens;
+                require(expectedAssetFromUnitPrice > 0 && (diffUnit * 10000 / expectedAssetFromUnitPrice <= 500), "AsyncVault: deposit variance exceeds threshold");
+            }
+        }
+
+        lastDepositUSDCAmount = usdcAmountPaid;
 
         IERC20(asset()).safeTransferFrom(msg.sender, address(this), assetTokens);
         _pendingDeposit[investor] += assetTokens;

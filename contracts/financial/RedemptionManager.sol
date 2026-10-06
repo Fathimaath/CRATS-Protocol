@@ -660,13 +660,19 @@ contract RedemptionManager is AccessControl, ReentrancyGuard {
             return;
         }
 
+        // Last-investor relief: If redeeming all remaining shares in the vault, waive gate restrictions
+        uint256 totalVaultSupply = IERC20(vault).totalSupply();
+        if (totalVaultSupply > 0 && shares >= totalVaultSupply) {
+            return;
+        }
+
         // Check if new period started
         if (block.timestamp >= gate.lastPeriodStart + gate.periodDuration) {
             return; // New period, gate reset
         }
 
         // Check gate limit
-        uint256 maxRedeemable = (gate.gatePercentage * IERC20(vault).totalSupply()) / BASIS_POINTS;
+        uint256 maxRedeemable = (gate.gatePercentage * totalVaultSupply) / BASIS_POINTS;
         require(
             redeemedPerPeriod[vault][currentPeriod[vault]] + shares <= maxRedeemable,
             "RedemptionManager: Gate limit reached"
@@ -680,6 +686,11 @@ contract RedemptionManager is AccessControl, ReentrancyGuard {
         RedemptionGate memory gate = redemptionGates[vault];
 
         if (!gate.active) {
+            return;
+        }
+
+        uint256 totalVaultSupply = IERC20(vault).totalSupply();
+        if (totalVaultSupply > 0 && assets >= totalVaultSupply) {
             return;
         }
 

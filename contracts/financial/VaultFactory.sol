@@ -53,6 +53,11 @@ contract VaultFactory is AccessControl, ReentrancyGuard {
     address public assetFactory;
     address public syncManager;
 
+    /// @dev Protocol default dependencies for created vaults
+    address public defaultTreasury;
+    address public defaultNavOracle;
+    address public defaultFeeEngine;
+
     /// @dev Category plugins
     mapping(bytes32 => address) public categoryPlugins;
 
@@ -184,9 +189,12 @@ contract VaultFactory is AccessControl, ReentrancyGuard {
             registry = IAssetFactory(assetFactory).assetRegistry();
         }
 
+        bytes32 assetId = bytes32(uint256(uint160(params.asset)));
+
         // Initialize vault
         if (params.vaultType == VaultType.SYNC) {
-            ISyncVault(vault).initialize(
+            ISyncVault sVault = ISyncVault(vault);
+            sVault.initialize(
                 params.asset, 
                 params.name, 
                 params.symbol, 
@@ -194,15 +202,26 @@ contract VaultFactory is AccessControl, ReentrancyGuard {
                 registry,
                 syncManager
             );
-            ISyncVault(vault).setCategory(params.category);
+            sVault.setCategory(params.category);
+            sVault.setAssetId(assetId);
+            if (defaultTreasury != address(0)) {
+                sVault.setTreasury(defaultTreasury);
+            }
+            if (defaultNavOracle != address(0)) {
+                sVault.setNavOracle(defaultNavOracle);
+            }
+            if (defaultFeeEngine != address(0)) {
+                sVault.setFeeEngine(defaultFeeEngine);
+            }
             if (identityRegistry != address(0)) {
-                ISyncVault(vault).setIdentityRegistry(identityRegistry);
+                sVault.setIdentityRegistry(identityRegistry);
             }
             if (complianceModule != address(0)) {
-                ISyncVault(vault).setComplianceModule(complianceModule);
+                sVault.setComplianceModule(complianceModule);
             }
         } else {
-            IAsyncVault(vault).initialize(
+            IAsyncVault aVault = IAsyncVault(vault);
+            aVault.initialize(
                 params.asset,
                 params.name,
                 params.symbol,
@@ -210,10 +229,23 @@ contract VaultFactory is AccessControl, ReentrancyGuard {
                 registry,
                 syncManager
             );
-            IAsyncVault(vault).setCategory(params.category);
-            IAsyncVault(vault).setSettlementPeriod(params.redeemSettlement);
+            aVault.setCategory(params.category);
+            aVault.setSettlementPeriod(params.redeemSettlement);
+            aVault.setAssetId(assetId);
+            if (defaultTreasury != address(0)) {
+                aVault.setTreasury(defaultTreasury);
+            }
+            if (defaultNavOracle != address(0)) {
+                aVault.setNavOracle(defaultNavOracle);
+            }
+            if (defaultFeeEngine != address(0)) {
+                aVault.setFeeEngine(defaultFeeEngine);
+            }
+            if (identityRegistry != address(0)) {
+                aVault.setIdentityRegistry(identityRegistry);
+            }
             if (complianceModule != address(0)) {
-                IAsyncVault(vault).setComplianceModule(complianceModule);
+                aVault.setComplianceModule(complianceModule);
             }
         }
 
@@ -365,6 +397,35 @@ contract VaultFactory is AccessControl, ReentrancyGuard {
         require(sm != address(0), "VaultFactory: Invalid sync manager");
         syncManager = sm;
         emit Layer1Configured("SyncManager", sm);
+    }
+
+    /**
+     * @dev Set Protocol Default Vault Dependencies (Treasury, NAV Oracle, FeeEngine)
+     */
+    function setProtocolDefaults(
+        address _treasury,
+        address _navOracle,
+        address _feeEngine
+    ) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        defaultTreasury = _treasury;
+        defaultNavOracle = _navOracle;
+        defaultFeeEngine = _feeEngine;
+        emit Layer1Configured("ProtocolDefaults", _treasury);
+    }
+
+    function setDefaultTreasury(address _treasury) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        defaultTreasury = _treasury;
+        emit Layer1Configured("DefaultTreasury", _treasury);
+    }
+
+    function setDefaultNavOracle(address _navOracle) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        defaultNavOracle = _navOracle;
+        emit Layer1Configured("DefaultNavOracle", _navOracle);
+    }
+
+    function setDefaultFeeEngine(address _feeEngine) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        defaultFeeEngine = _feeEngine;
+        emit Layer1Configured("DefaultFeeEngine", _feeEngine);
     }
 
     // ========== View Functions ==========
